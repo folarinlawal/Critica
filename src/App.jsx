@@ -361,6 +361,7 @@ export default function App() {
   const [authLoading, setAuthLoading] = useState(false);
   const [authError, setAuthError] = useState(null);
   const [authMessage, setAuthMessage] = useState(null);
+  const [showAuth, setShowAuth] = useState(false);
  
   // App navigation
   const [view, setView] = useState("home"); // home | new | result | detail | settings
@@ -464,7 +465,7 @@ export default function App() {
     finally { setAuthLoading(false); }
   };
  
-  const handleSignOut = async () => { await supabase.auth.signOut(); reset(); };
+  const handleSignOut = async () => { await supabase.auth.signOut(); reset(); setShowAuth(false); };
  
   // ── Settings save ─────────────────────────────────────────────────────────
   const saveSettings = async () => {
@@ -687,22 +688,80 @@ Max 3 actNow items, max 3 roadmap items. Raw JSON only:
         @keyframes spin { 0%{transform:rotate(0deg)} 100%{transform:rotate(360deg)} }
       `}</style>
  
-      {/* ── AUTH SCREEN ── */}
+      {/* ── LANDING + AUTH ── */}
       {!user && (
-        <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: "24px" }}>
-          <div style={{ width: "100%", maxWidth: 400 }}>
-            {/* Logo */}
-            <div style={{ textAlign: "center", marginBottom: 40 }}>
-              <div style={{ display: "inline-flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
-                <div style={{ width: 32, height: 32, borderRadius: 8, background: C.accent, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                  <span style={{ color: "#fff", fontSize: 16 }}>◎</span>
-                </div>
-                <span style={{ fontSize: 20, fontWeight: 800, color: C.text, letterSpacing: "-0.03em" }}>Lens</span>
+        <div style={{ minHeight: "100vh", background: C.bg }}>
+          {/* Nav */}
+          <div style={{ maxWidth: 960, margin: "0 auto", padding: "20px 24px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <div style={{ display: "inline-flex", alignItems: "center", gap: 8, cursor: "pointer" }} onClick={() => { setShowAuth(false); setAuthError(null); setAuthMessage(null); }}>
+              <div style={{ width: 28, height: 28, borderRadius: 6, background: C.accent, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <span style={{ color: "#fff", fontSize: 14 }}>◎</span>
               </div>
-              <p style={{ fontSize: 14, color: C.textMuted, margin: 0 }}>AI User Simulation for Designers</p>
+              <span style={{ fontSize: 16, fontWeight: 800, color: C.text, letterSpacing: "-0.02em" }}>Lens</span>
             </div>
+            <button onClick={() => { setAuthView("login"); setShowAuth(true); }}
+              style={{ ...btnGhost, padding: "8px 18px" }}>Log In</button>
+          </div>
  
-            <div style={{ ...card, padding: "28px 32px" }}>
+          {!showAuth ? (
+            <>
+              {/* Hero */}
+              <div style={{ maxWidth: 720, margin: "0 auto", padding: "80px 24px 60px", textAlign: "center" }}>
+                <div style={{ display: "inline-block", padding: "4px 12px", borderRadius: 999, background: C.indigoLight, border: `1px solid ${C.indigoBorder}`, color: C.indigo, fontSize: 12, fontWeight: 600, marginBottom: 24, letterSpacing: "0.04em", textTransform: "uppercase" }}>
+                  AI User Simulation
+                </div>
+                <h1 style={{ fontSize: "clamp(32px, 6vw, 56px)", fontWeight: 900, lineHeight: 1.1, margin: "0 0 20px", color: C.text, letterSpacing: "-0.03em" }}>
+                  Test your designs before your users do
+                </h1>
+                <p style={{ fontSize: "clamp(16px, 2.5vw, 20px)", color: C.textMed, lineHeight: 1.6, margin: "0 0 40px", maxWidth: 540, marginLeft: "auto", marginRight: "auto" }}>
+                  Simulate how real users experience your designs and surface problems early.
+                </p>
+                <button onClick={() => { setAuthView("signup"); setShowAuth(true); }}
+                  style={{ ...btnPrimary, padding: "14px 32px", fontSize: 15 }}>
+                  Get Started
+                </button>
+                <div style={{ marginTop: 12, fontSize: 12, color: C.textMuted }}>Free to use. No credit card required.</div>
+              </div>
+ 
+              {/* How it works */}
+              <div style={{ maxWidth: 960, margin: "0 auto", padding: "0 24px 80px" }}>
+                <div style={{ textAlign: "center", marginBottom: 40 }}>
+                  <h2 style={{ fontSize: 24, fontWeight: 800, color: C.text, margin: "0 0 8px", letterSpacing: "-0.02em" }}>How it works</h2>
+                  <p style={{ fontSize: 15, color: C.textMuted, margin: 0 }}>Three steps from design to actionable feedback.</p>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 16 }}>
+                  {[
+                    { step: "01", title: "Upload your design", desc: "Share a Figma link, screenshots, or a screen recording of your flow." },
+                    { step: "02", title: "Choose a user persona", desc: "Pick from research-backed personas or define your own target user." },
+                    { step: "03", title: "Get actionable feedback", desc: "Receive findings split into what you can fix now and what goes on the roadmap." }
+                  ].map(item => (
+                    <div key={item.step} style={{ ...card, padding: "24px" }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: C.indigo, letterSpacing: "0.08em", marginBottom: 10 }}>{item.step}</div>
+                      <div style={{ fontSize: 16, fontWeight: 700, color: C.text, marginBottom: 8 }}>{item.title}</div>
+                      <div style={{ fontSize: 13, color: C.textMed, lineHeight: 1.6 }}>{item.desc}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+ 
+              {/* CTA strip */}
+              <div style={{ background: C.accent, padding: "56px 24px", textAlign: "center" }}>
+                <h2 style={{ fontSize: "clamp(22px, 4vw, 32px)", fontWeight: 800, color: "#fff", margin: "0 0 12px", letterSpacing: "-0.02em" }}>
+                  Start simulating today
+                </h2>
+                <p style={{ fontSize: 15, color: "rgba(255,255,255,0.7)", margin: "0 0 28px" }}>
+                  Built for designers who want better feedback, faster.
+                </p>
+                <button onClick={() => { setAuthView("signup"); setShowAuth(true); }}
+                  style={{ padding: "14px 32px", borderRadius: 8, border: "none", background: "#fff", color: C.accent, fontSize: 15, fontWeight: 700, cursor: "pointer" }}>
+                  Create Free Account
+                </button>
+              </div>
+            </>
+          ) : (
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: "40px 24px" }}>
+              <div style={{ width: "100%", maxWidth: 400 }}>
+                <div style={{ ...card, padding: "28px 32px" }}>
               {authMode === "forgot" ? (
                 <>
                   <h2 style={{ fontSize: 18, fontWeight: 700, margin: "0 0 6px", color: C.text }}>Reset password</h2>
@@ -751,7 +810,9 @@ Max 3 actNow items, max 3 roadmap items. Raw JSON only:
                 </>
               )}
             </div>
-          </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
  
