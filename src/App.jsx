@@ -69,11 +69,14 @@ function FindingThread({ finding, type, productType, personaDesc, constraintsSum
  
   const saveConversation = async (updatedMessages) => {
     if (!simulationId) return;
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
     await supabase.from("conversations").upsert({
       simulation_id: simulationId,
       finding_title: finding.title,
       finding_type: type,
-      messages: updatedMessages
+      messages: updatedMessages,
+      user_id: user.id
     }, { onConflict: "simulation_id,finding_title" });
   };
  
@@ -84,7 +87,6 @@ function FindingThread({ finding, type, productType, personaDesc, constraintsSum
     setMessages(newMessages);
     setInput("");
     setLoading(true);
- 
     try {
       const systemPrompt = `You are an expert UX design critic having a focused conversation about one specific design finding. Stay anchored to this finding only. Be concise — 2-4 sentences per reply. When the designer provides context or constraints, acknowledge them and either revise your thinking, suggest a workaround within those constraints, or validate their reasoning. Never repeat the original finding back verbatim.
  
@@ -101,18 +103,11 @@ Persona: ${personaDesc}
 Constraints: ${constraintsSummary}`;
  
       const apiMessages = newMessages.map(m => ({ role: m.role === "user" ? "user" : "assistant", content: m.text }));
- 
       const res = await fetch("/api/critique", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-6",
-          max_tokens: 400,
-          system: systemPrompt,
-          messages: apiMessages
-        })
+        body: JSON.stringify({ model: "claude-sonnet-4-6", max_tokens: 400, system: systemPrompt, messages: apiMessages })
       });
- 
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error?.message || `API error ${res.status}`);
       const reply = (data.content || []).map(b => b.text || "").join("").trim();
@@ -133,15 +128,9 @@ Constraints: ${constraintsSummary}`;
     <div style={{ borderRadius: 12, overflow: "hidden", border: `1px solid ${accentColor}33`, background: sevBg(finding.severity) }}>
       <div style={{ padding: "18px 20px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
-          <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: sev(finding.severity), padding: "3px 9px", borderRadius: 999, background: `${sev(finding.severity)}18`, border: `1px solid ${sev(finding.severity)}44` }}>
-            {finding.severity}
-          </span>
+          <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: sev(finding.severity), padding: "3px 9px", borderRadius: 999, background: `${sev(finding.severity)}18`, border: `1px solid ${sev(finding.severity)}44` }}>{finding.severity}</span>
           <span style={{ fontSize: 14, fontWeight: 700, flex: 1 }}>{finding.title}</span>
-          {finding.effort && (
-            <span style={{ fontSize: 10, fontWeight: 700, color: effortColor(finding.effort), padding: "2px 8px", borderRadius: 999, background: `${effortColor(finding.effort)}15`, border: `1px solid ${effortColor(finding.effort)}33` }}>
-              {finding.effort} effort
-            </span>
-          )}
+          {finding.effort && <span style={{ fontSize: 10, fontWeight: 700, color: effortColor(finding.effort), padding: "2px 8px", borderRadius: 999, background: `${effortColor(finding.effort)}15`, border: `1px solid ${effortColor(finding.effort)}33` }}>{finding.effort} effort</span>}
         </div>
         <p style={{ margin: "0 0 8px", fontSize: 13, lineHeight: 1.6, color: "#9CA3AF" }}>{finding.description}</p>
         {finding.userImpact && (
@@ -156,27 +145,18 @@ Constraints: ${constraintsSummary}`;
         </div>
         <button onClick={() => setOpen(o => !o)}
           style={{ padding: "7px 14px", borderRadius: 8, border: "1.5px solid rgba(255,255,255,0.1)", background: open ? "rgba(99,102,241,0.1)" : "transparent", color: open ? "#6366F1" : "#6B7280", fontSize: 12, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
-          <span style={{ fontSize: 14 }}>{open ? "▾" : "▸"}</span>
+          <span>{open ? "▾" : "▸"}</span>
           {messages.length > 0 ? `${messages.length} repl${messages.length === 1 ? "y" : "ies"}` : "Discuss this finding"}
         </button>
       </div>
- 
       {open && (
         <div style={{ borderTop: "1px solid rgba(255,255,255,0.06)", background: "rgba(0,0,0,0.2)" }}>
           <div style={{ maxHeight: 300, overflowY: "auto", padding: "16px 20px", display: "flex", flexDirection: "column", gap: 12 }}>
-            {messages.length === 0 && (
-              <div style={{ color: "#4B5563", fontSize: 13, fontStyle: "italic", textAlign: "center", padding: "12px 0" }}>
-                Add context, push back, or ask for alternatives — the critique will adapt.
-              </div>
-            )}
+            {messages.length === 0 && <div style={{ color: "#4B5563", fontSize: 13, fontStyle: "italic", textAlign: "center", padding: "12px 0" }}>Add context, push back, or ask for alternatives — the critique will adapt.</div>}
             {messages.map((m, i) => (
               <div key={i} style={{ display: "flex", gap: 10, flexDirection: m.role === "user" ? "row-reverse" : "row" }}>
-                <div style={{ width: 28, height: 28, borderRadius: "50%", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, background: m.role === "user" ? "rgba(99,102,241,0.2)" : "rgba(255,255,255,0.05)", border: `1px solid ${m.role === "user" ? "rgba(99,102,241,0.3)" : "rgba(255,255,255,0.08)"}` }}>
-                  {m.role === "user" ? "👤" : "⬡"}
-                </div>
-                <div style={{ maxWidth: "80%", padding: "10px 14px", borderRadius: m.role === "user" ? "12px 4px 12px 12px" : "4px 12px 12px 12px", background: m.role === "user" ? "rgba(99,102,241,0.15)" : "rgba(255,255,255,0.04)", border: `1px solid ${m.role === "user" ? "rgba(99,102,241,0.2)" : "rgba(255,255,255,0.07)"}`, fontSize: 13, lineHeight: 1.65, color: m.role === "user" ? "#C7D2FE" : "#D1D5DB" }}>
-                  {m.text}
-                </div>
+                <div style={{ width: 28, height: 28, borderRadius: "50%", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, background: m.role === "user" ? "rgba(99,102,241,0.2)" : "rgba(255,255,255,0.05)", border: `1px solid ${m.role === "user" ? "rgba(99,102,241,0.3)" : "rgba(255,255,255,0.08)"}` }}>{m.role === "user" ? "👤" : "⬡"}</div>
+                <div style={{ maxWidth: "80%", padding: "10px 14px", borderRadius: m.role === "user" ? "12px 4px 12px 12px" : "4px 12px 12px 12px", background: m.role === "user" ? "rgba(99,102,241,0.15)" : "rgba(255,255,255,0.04)", border: `1px solid ${m.role === "user" ? "rgba(99,102,241,0.2)" : "rgba(255,255,255,0.07)"}`, fontSize: 13, lineHeight: 1.65, color: m.role === "user" ? "#C7D2FE" : "#D1D5DB" }}>{m.text}</div>
               </div>
             ))}
             {loading && (
@@ -188,14 +168,9 @@ Constraints: ${constraintsSummary}`;
             <div ref={bottomRef} />
           </div>
           <div style={{ padding: "12px 20px 16px", display: "flex", gap: 8 }}>
-            <input value={input} onChange={e => setInput(e.target.value)}
-              onKeyDown={e => e.key === "Enter" && !e.shiftKey && sendMessage()}
-              placeholder="Add context, push back, or ask for an alternative..."
-              style={{ ...inputStyle, padding: "10px 14px", fontSize: 13 }} />
+            <textarea value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === "Enter" && !e.shiftKey && sendMessage()} placeholder="Add context, push back, or ask for an alternative..." rows={2} style={{ ...inputStyle, padding: "10px 14px", fontSize: 13, resize: "none", fontFamily: "inherit", lineHeight: 1.5 }} />
             <button onClick={sendMessage} disabled={!input.trim() || loading}
-              style={{ padding: "10px 16px", borderRadius: 10, border: "none", background: input.trim() && !loading ? "linear-gradient(135deg, #6366F1, #8B5CF6)" : "rgba(255,255,255,0.05)", color: input.trim() && !loading ? "#fff" : "#4B5563", fontSize: 13, fontWeight: 700, cursor: input.trim() && !loading ? "pointer" : "not-allowed", whiteSpace: "nowrap", flexShrink: 0 }}>
-              Send
-            </button>
+              style={{ padding: "10px 16px", borderRadius: 10, border: "none", background: input.trim() && !loading ? "linear-gradient(135deg, #6366F1, #8B5CF6)" : "rgba(255,255,255,0.05)", color: input.trim() && !loading ? "#fff" : "#4B5563", fontSize: 13, fontWeight: 700, cursor: input.trim() && !loading ? "pointer" : "not-allowed", whiteSpace: "nowrap", flexShrink: 0 }}>Send</button>
           </div>
         </div>
       )}
@@ -204,7 +179,6 @@ Constraints: ${constraintsSummary}`;
   );
 }
  
-// ── History Card ──
 function SimulationCard({ sim, onView }) {
   const date = new Date(sim.created_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
   const scoreColor = sim.overall_score >= 7 ? "#34C759" : sim.overall_score >= 5 ? "#FF9500" : "#FF3B30";
@@ -236,7 +210,18 @@ function SimulationCard({ sim, onView }) {
 }
  
 export default function App() {
-  const [view, setView] = useState("home"); // home | new | result | history | detail
+  // Auth state
+  const [user, setUser] = useState(null);
+  const [authView, setAuthView] = useState("login");
+  const [authEmail, setAuthEmail] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
+  const [authLoading, setAuthLoading] = useState(false);
+  const [authError, setAuthError] = useState(null);
+  const [authMessage, setAuthMessage] = useState(null);
+  const [authMode, setAuthMode] = useState("auth"); // auth | forgot
+ 
+  // App state
+  const [view, setView] = useState("home");
   const [step, setStep] = useState("input");
   const [inputType, setInputType] = useState("figma");
   const [figmaUrl, setFigmaUrl] = useState("");
@@ -262,11 +247,61 @@ export default function App() {
   const fileInputRef = useRef();
  
   useEffect(() => {
-    if (view === "history") loadSimulations();
-  }, [view]);
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
+    });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+    });
+    return () => subscription.unsubscribe();
+  }, []);
+ 
+  useEffect(() => {
+    if (view === "history" && user) loadSimulations();
+  }, [view, user]);
+ 
+  const handleAuth = async (type) => {
+    setAuthLoading(true);
+    setAuthError(null);
+    setAuthMessage(null);
+    try {
+      if (type === "signup") {
+        const { error } = await supabase.auth.signUp({ email: authEmail, password: authPassword });
+        if (error) throw error;
+        setAuthMessage("Check your email to confirm your account before signing in.");
+      } else {
+        const { error } = await supabase.auth.signInWithPassword({ email: authEmail, password: authPassword });
+        if (error) throw error;
+      }
+    } catch (err) {
+      setAuthError(err.message);
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+ const handleForgotPassword = async () => {
+    setAuthLoading(true);
+    setAuthError(null);
+    setAuthMessage(null);
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(authEmail, {
+        redirectTo: window.location.origin
+      });
+      if (error) throw error;
+      setAuthMessage("Check your email for a password reset link.");
+    } catch (err) {
+      setAuthError(err.message);
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+    reset();
+  };
  
   const loadSimulations = async () => {
-    const { data } = await supabase.from("simulations").select("*").order("created_at", { ascending: false });
+    const { data } = await supabase.from("simulations").select("*").eq("user_id", user.id).order("created_at", { ascending: false });
     if (data) setSimulations(data);
   };
  
@@ -278,6 +313,7 @@ export default function App() {
       data.forEach(c => { convMap[c.finding_title] = c.messages; });
       setSimConversations(convMap);
     }
+    setActiveTab("now");
     setView("detail");
   };
  
@@ -318,6 +354,32 @@ export default function App() {
   const getPersonaDesc = () => {
     const persona = PERSONAS.find(p => p.id === selectedPersona);
     return selectedPersona === "custom" ? customPersona : `${persona?.label} — ${persona?.description}. Traits: ${persona?.traits}`;
+  };
+ 
+  const generatePMSummaryFromData = (data, pType, pLabel) => {
+    return [
+      `DESIGN REVIEW — ${pType?.toUpperCase()}`,
+      `Persona Tested: ${pLabel}`,
+      `UX Score: ${data.overallScore}/10`,
+      ``,
+      `USER EXPERIENCE SUMMARY`,
+      data.narrativeWalkthrough,
+      ``,
+      `ROADMAP OPPORTUNITIES (${data.roadmap?.length || 0} items)`,
+      `Issues identified during design review that fall outside current sprint constraints.`,
+      ``,
+      ...(data.roadmap || []).map((item, i) => [
+        `${i + 1}. ${item.title} [${item.severity?.toUpperCase()}]`,
+        `User Impact: ${item.userImpact}`,
+        `Recommendation: ${item.recommendation}`,
+        `PM Context: ${item.pmNote}`,
+        ``
+      ]).flat(),
+      `WHAT WE'RE FIXING NOW`,
+      ...(data.actNow || []).map((item, i) => `${i + 1}. ${item.title} — ${item.recommendation}`),
+      ``,
+      `Generated by Critica — AI Design Critique Tool`
+    ].join("\n");
   };
  
   const analyse = async () => {
@@ -377,9 +439,9 @@ Max 3 actNow items, max 3 roadmap items. Raw JSON only:
         catch { parsed = { narrativeWalkthrough: "Response too long — please try again.", overallScore: 0, actNow: [], roadmap: [], strengths: [], priorityFocus: "Please retry." }; }
       }
  
-      // Save to Supabase
       const pmSummary = generatePMSummaryFromData(parsed, productType, personaLabel);
       const { data: simData } = await supabase.from("simulations").insert({
+        user_id: user.id,
         name: simName || `${productType} — ${personaLabel} — ${new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}`,
         product_type: productType,
         input_type: inputType,
@@ -406,32 +468,6 @@ Max 3 actNow items, max 3 roadmap items. Raw JSON only:
     }
   };
  
-  const generatePMSummaryFromData = (data, pType, pLabel) => {
-    return [
-      `DESIGN REVIEW — ${pType?.toUpperCase()}`,
-      `Persona Tested: ${pLabel}`,
-      `UX Score: ${data.overallScore}/10`,
-      ``,
-      `USER EXPERIENCE SUMMARY`,
-      data.narrativeWalkthrough,
-      ``,
-      `ROADMAP OPPORTUNITIES (${data.roadmap?.length || 0} items)`,
-      `Issues identified during design review that fall outside current sprint constraints.`,
-      ``,
-      ...(data.roadmap || []).map((item, i) => [
-        `${i + 1}. ${item.title} [${item.severity?.toUpperCase()}]`,
-        `User Impact: ${item.userImpact}`,
-        `Recommendation: ${item.recommendation}`,
-        `PM Context: ${item.pmNote}`,
-        ``
-      ]).flat(),
-      `WHAT WE'RE FIXING NOW`,
-      ...(data.actNow || []).map((item, i) => `${i + 1}. ${item.title} — ${item.recommendation}`),
-      ``,
-      `Generated by Critica — AI Design Critique Tool`
-    ].join("\n");
-  };
- 
   const generatePMSummary = () => {
     if (!critique) return "";
     const persona = PERSONAS.find(p => p.id === selectedPersona);
@@ -442,9 +478,9 @@ Max 3 actNow items, max 3 roadmap items. Raw JSON only:
   const reset = () => {
     setView("home"); setCritique(null); setFiles([]);
     setFigmaUrl(""); setSelectedPersona(null); setCustomPersona("");
-    setProductType(""); setContext(""); setError(null);
+    setProductType(""); setContext(""); setError(null); setSimName("");
     setTeamSize(null); setTimeline(null); setScopeLimits([]); setOtherConstraints("");
-    setCurrentSimId(null); setStep("input"); setSimName("");
+    setCurrentSimId(null); setStep("input");
   };
  
   const personaDesc = selectedPersona ? getPersonaDesc() : "";
@@ -464,20 +500,19 @@ Max 3 actNow items, max 3 roadmap items. Raw JSON only:
               <div style={{ width: 36, height: 36, borderRadius: 10, background: "linear-gradient(135deg, #6366F1, #8B5CF6)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>⬡</div>
               <span style={{ fontSize: 13, fontWeight: 600, letterSpacing: "0.12em", textTransform: "uppercase", color: "#6366F1" }}>Critica</span>
             </div>
-            {view !== "history" ? (
-              <button onClick={() => setView("history")}
-                style={{ padding: "8px 16px", borderRadius: 8, border: "1.5px solid rgba(255,255,255,0.08)", background: "transparent", color: "#6B7280", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
-                History →
-              </button>
-            ) : (
-              <button onClick={reset}
-                style={{ padding: "8px 16px", borderRadius: 8, border: "1.5px solid rgba(255,255,255,0.08)", background: "transparent", color: "#6B7280", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
-                ← New Critique
-              </button>
+            {user && (
+              <div style={{ display: "flex", gap: 8 }}>
+                {view !== "history" ? (
+                  <button onClick={() => setView("history")} style={{ padding: "8px 16px", borderRadius: 8, border: "1.5px solid rgba(255,255,255,0.08)", background: "transparent", color: "#6B7280", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>History →</button>
+                ) : (
+                  <button onClick={reset} style={{ padding: "8px 16px", borderRadius: 8, border: "1.5px solid rgba(255,255,255,0.08)", background: "transparent", color: "#6B7280", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>← Home</button>
+                )}
+                <button onClick={handleSignOut} style={{ padding: "8px 16px", borderRadius: 8, border: "1.5px solid rgba(255,59,48,0.2)", background: "transparent", color: "#FF6B6B", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Sign Out</button>
+              </div>
             )}
           </div>
  
-          {view === "home" && (
+          {!user && (
             <>
               <h1 style={{ fontSize: "clamp(28px,5vw,40px)", fontWeight: 700, lineHeight: 1.1, margin: 0, letterSpacing: "-0.02em", background: "linear-gradient(135deg, #E8E8F0 0%, #9CA3AF 100%)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
                 AI Design Critique
@@ -485,22 +520,29 @@ Max 3 actNow items, max 3 roadmap items. Raw JSON only:
               <p style={{ color: "#6B7280", marginTop: 10, fontSize: 15, lineHeight: 1.6 }}>
                 Simulate how real users experience your designs. Get feedback that fits your constraints.
               </p>
-              <button onClick={() => setView("new")}
-                style={{ marginTop: 24, padding: "14px 28px", borderRadius: 12, border: "none", background: "linear-gradient(135deg, #6366F1, #8B5CF6)", color: "#fff", fontSize: 15, fontWeight: 700, cursor: "pointer", boxShadow: "0 4px 24px rgba(99,102,241,0.3)" }}>
-                Start New Critique →
-              </button>
             </>
           )}
  
-          {view === "history" && (
+          {user && view === "home" && (
+            <>
+              <h1 style={{ fontSize: "clamp(28px,5vw,40px)", fontWeight: 700, lineHeight: 1.1, margin: 0, letterSpacing: "-0.02em", background: "linear-gradient(135deg, #E8E8F0 0%, #9CA3AF 100%)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
+                AI Design Critique
+              </h1>
+              <p style={{ color: "#6B7280", marginTop: 10, fontSize: 15, lineHeight: 1.6 }}>
+                Simulate how real users experience your designs. Get feedback that fits your constraints.
+              </p>
+            </>
+          )}
+ 
+          {user && view === "history" && (
             <h1 style={{ fontSize: "clamp(22px,4vw,32px)", fontWeight: 700, lineHeight: 1.1, margin: 0, letterSpacing: "-0.02em", background: "linear-gradient(135deg, #E8E8F0 0%, #9CA3AF 100%)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
               Simulation History
             </h1>
           )}
  
-          {(view === "new") && (step === "input" || step === "constraints") && (
+          {user && view === "new" && (step === "input" || step === "constraints") && (
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 20 }}>
-              {["Design", "Constraints", "Critique"].map((s, i) => {
+              {["Design", "Constraints", "Simulate"].map((s, i) => {
                 const stepIndex = step === "input" ? 0 : 1;
                 const active = i === stepIndex;
                 const done = i < stepIndex;
@@ -520,297 +562,354 @@ Max 3 actNow items, max 3 roadmap items. Raw JSON only:
           )}
         </div>
  
-        {/* ── HOME ── */}
-        {view === "home" && simulations.length === 0 && (
-          <div style={{ textAlign: "center", padding: "40px 0", color: "#4B5563", fontSize: 14 }}>
-            No simulations yet. Run your first critique to get started.
+        {/* ── AUTH SCREEN ── */}
+        {!user && (
+          <div style={{ maxWidth: 400, margin: "0 auto", display: "flex", flexDirection: "column", gap: 20 }}>
+            <div style={{ display: "flex", gap: 4, background: "rgba(255,255,255,0.03)", borderRadius: 10, padding: 4 }}>
+              <button onClick={() => { setAuthView("login"); setAuthError(null); setAuthMessage(null); }}
+                style={{ flex: 1, padding: "10px", borderRadius: 8, border: "none", background: authView === "login" ? "rgba(255,255,255,0.07)" : "transparent", color: authView === "login" ? "#E8E8F0" : "#6B7280", cursor: "pointer", fontSize: 13, fontWeight: 600 }}>
+                Log In
+              </button>
+              <button onClick={() => { setAuthView("signup"); setAuthError(null); setAuthMessage(null); }}
+                style={{ flex: 1, padding: "10px", borderRadius: 8, border: "none", background: authView === "signup" ? "rgba(255,255,255,0.07)" : "transparent", color: authView === "signup" ? "#E8E8F0" : "#6B7280", cursor: "pointer", fontSize: 13, fontWeight: 600 }}>
+                Sign Up
+              </button>
+            </div>
+ 
+            {authMessage && (
+              <div style={{ padding: "14px 16px", borderRadius: 10, background: "rgba(52,199,89,0.08)", border: "1px solid rgba(52,199,89,0.2)", color: "#34C759", fontSize: 13, lineHeight: 1.6 }}>
+                {authMessage}
+              </div>
+            )}
+            {authError && (
+              <div style={{ padding: "14px 16px", borderRadius: 10, background: "rgba(255,59,48,0.08)", border: "1px solid rgba(255,59,48,0.25)", color: "#FF6B6B", fontSize: 13, lineHeight: 1.6 }}>
+                {authError}
+              </div>
+            )}
+ 
+            {authMode === "forgot" ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                <input value={authEmail} onChange={e => setAuthEmail(e.target.value)} placeholder="Email address" type="email" style={inputStyle} />
+                <button onClick={handleForgotPassword} disabled={authLoading || !authEmail}
+                  style={{ padding: "14px", borderRadius: 12, border: "none", background: authLoading || !authEmail ? "rgba(255,255,255,0.05)" : "linear-gradient(135deg, #6366F1, #8B5CF6)", color: authLoading || !authEmail ? "#4B5563" : "#fff", fontSize: 14, fontWeight: 700, cursor: authLoading || !authEmail ? "not-allowed" : "pointer", boxShadow: !authLoading && authEmail ? "0 4px 24px rgba(99,102,241,0.3)" : "none" }}>
+                  {authLoading ? "Please wait..." : "Send Reset Link"}
+                </button>
+                <button onClick={() => { setAuthMode("auth"); setAuthError(null); setAuthMessage(null); }}
+                  style={{ padding: "10px", borderRadius: 10, border: "none", background: "transparent", color: "#6B7280", fontSize: 13, cursor: "pointer" }}>
+                  ← Back to Log In
+                </button>
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                <input value={authEmail} onChange={e => setAuthEmail(e.target.value)} placeholder="Email address" type="email" style={inputStyle} />
+                <input value={authPassword} onChange={e => setAuthPassword(e.target.value)} placeholder="Password" type="password" style={inputStyle} />
+                <button onClick={() => handleAuth(authView)} disabled={authLoading || !authEmail || !authPassword}
+                  style={{ padding: "14px", borderRadius: 12, border: "none", background: authLoading || !authEmail || !authPassword ? "rgba(255,255,255,0.05)" : "linear-gradient(135deg, #6366F1, #8B5CF6)", color: authLoading || !authEmail || !authPassword ? "#4B5563" : "#fff", fontSize: 14, fontWeight: 700, cursor: authLoading || !authEmail || !authPassword ? "not-allowed" : "pointer", boxShadow: !authLoading && authEmail && authPassword ? "0 4px 24px rgba(99,102,241,0.3)" : "none" }}>
+                  {authLoading ? "Please wait..." : authView === "login" ? "Log In" : "Create Account"}
+                </button>
+                {authView === "login" && (
+                  <button onClick={() => { setAuthMode("forgot"); setAuthError(null); setAuthMessage(null); }}
+                    style={{ padding: "10px", borderRadius: 10, border: "none", background: "transparent", color: "#6B7280", fontSize: 13, cursor: "pointer" }}>
+                    Forgot password?
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         )}
  
-        {/* ── NEW CRITIQUE: STEP 1 ── */}
-        {view === "new" && step === "input" && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 28 }}>
-            <Section label="01 — What are you analysing?">
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10 }}>
-                {[{ id: "figma", icon: "◈", label: "Figma Link" }, { id: "screenshots", icon: "⊞", label: "Screenshots" }, { id: "recording", icon: "◉", label: "Screen Recording" }].map(opt => (
-                  <button key={opt.id} onClick={() => { setInputType(opt.id); setFiles([]); }}
-                    style={{ padding: "16px 12px", borderRadius: 12, border: `1.5px solid ${inputType === opt.id ? "#6366F1" : "rgba(255,255,255,0.07)"}`, background: inputType === opt.id ? "rgba(99,102,241,0.1)" : "rgba(255,255,255,0.02)", color: inputType === opt.id ? "#E8E8F0" : "#6B7280", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, fontSize: 22 }}>
-                    <span>{opt.icon}</span>
-                    <span style={{ fontSize: 12, fontWeight: 600 }}>{opt.label}</span>
-                  </button>
-                ))}
-              </div>
-              {inputType === "figma" && (
-                <input value={figmaUrl} onChange={e => setFigmaUrl(e.target.value)} placeholder="https://www.figma.com/proto/..." style={inputStyle} />
-              )}
-              {(inputType === "screenshots" || inputType === "recording") && (
-                <div onDragOver={e => { e.preventDefault(); setDragOver(true); }} onDragLeave={() => setDragOver(false)}
-                  onDrop={e => { e.preventDefault(); setDragOver(false); handleFiles(e.dataTransfer.files); }}
-                  onClick={() => fileInputRef.current?.click()}
-                  style={{ border: `1.5px dashed ${dragOver ? "#6366F1" : "rgba(255,255,255,0.1)"}`, borderRadius: 12, padding: "32px 24px", textAlign: "center", cursor: "pointer", background: dragOver ? "rgba(99,102,241,0.06)" : "rgba(255,255,255,0.01)" }}>
-                  <div style={{ fontSize: 28, marginBottom: 8 }}>{inputType === "recording" ? "🎬" : "🖼️"}</div>
-                  <div style={{ color: "#9CA3AF", fontSize: 14 }}>{inputType === "recording" ? "Drop your screen recording (MP4, MOV)" : "Drop screenshots here or click to browse"}</div>
-                  {files.length > 0 && <div style={{ marginTop: 12, color: "#6366F1", fontSize: 13, fontWeight: 600 }}>{files.length} file{files.length > 1 ? "s" : ""} ready ✓</div>}
-                  <input ref={fileInputRef} type="file" multiple={inputType === "screenshots"} accept={inputType === "recording" ? "video/*" : "image/*"} style={{ display: "none" }} onChange={e => handleFiles(e.target.files)} />
-                </div>
-              )}
-            </Section>
-            <Section label="02 — Product type">
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                {PRODUCT_TYPES.map(pt => <button key={pt} onClick={() => setProductType(pt)} style={chipBtn(productType === pt)}>{pt}</button>)}
-              </div>
-            </Section>
-            <Section label="03 — Who is your user?">
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 10 }}>
-                {PERSONAS.map(p => (
-                  <button key={p.id} onClick={() => setSelectedPersona(p.id)}
-                    style={{ padding: "14px 16px", borderRadius: 12, border: `1.5px solid ${selectedPersona === p.id ? "#6366F1" : "rgba(255,255,255,0.07)"}`, background: selectedPersona === p.id ? "rgba(99,102,241,0.1)" : "rgba(255,255,255,0.02)", color: selectedPersona === p.id ? "#E8E8F0" : "#9CA3AF", cursor: "pointer", textAlign: "left" }}>
-                    <div style={{ fontSize: 20, marginBottom: 4 }}>{p.emoji}</div>
-                    <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 2 }}>{p.label}</div>
-                    <div style={{ fontSize: 11, lineHeight: 1.4, opacity: 0.7 }}>{p.description}</div>
-                  </button>
-                ))}
-              </div>
-              {selectedPersona === "custom" && (
-                <textarea value={customPersona} onChange={e => setCustomPersona(e.target.value)} placeholder="Describe your user: goals, tech comfort, context..." rows={3} style={{ ...inputStyle, resize: "vertical", fontFamily: "inherit" }} />
-              )}
-            </Section>
-            <Section label="04 — Additional context (optional)">
-              <textarea value={context} onChange={e => setContext(e.target.value)} placeholder="e.g. Checkout flow for a fashion app targeting 25–40 year olds." rows={3} style={{ ...inputStyle, resize: "vertical", fontFamily: "inherit" }} />
-            </Section>
-            <Section label="05 — Simulation name (optional)" sublabel="Leave blank to auto-generate from product type, persona and date">
-              <input value={simName} onChange={e => setSimName(e.target.value)} placeholder="e.g. Anchor — Checkout Flow v2" style={inputStyle} />
-            </Section>
-            <button disabled={!canProceedToConstraints()} onClick={() => setStep("constraints")}
-              style={{ padding: "16px 32px", borderRadius: 12, border: "none", background: canProceedToConstraints() ? "linear-gradient(135deg, #6366F1, #8B5CF6)" : "rgba(255,255,255,0.05)", color: canProceedToConstraints() ? "#fff" : "#4B5563", fontSize: 15, fontWeight: 700, cursor: canProceedToConstraints() ? "pointer" : "not-allowed", boxShadow: canProceedToConstraints() ? "0 4px 24px rgba(99,102,241,0.3)" : "none" }}>
-              Next — Set Constraints →
-            </button>
-          </div>
-        )}
- 
-        {/* ── STEP 2: CONSTRAINTS ── */}
-        {view === "new" && step === "constraints" && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 28 }}>
-            <div style={{ padding: "16px 20px", borderRadius: 12, background: "rgba(99,102,241,0.06)", border: "1px solid rgba(99,102,241,0.15)", fontSize: 13, color: "#9CA3AF", lineHeight: 1.6 }}>
-              Tell us what you're working with. The critique will split findings into what you can <strong style={{ color: "#E8E8F0" }}>fix now</strong> vs what belongs on the <strong style={{ color: "#E8E8F0" }}>roadmap</strong>.
-            </div>
-            <Section label="01 — Team size">
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10 }}>
-                {TEAM_SIZES.map(t => (
-                  <button key={t.id} onClick={() => setTeamSize(t.id)}
-                    style={{ padding: "14px 10px", borderRadius: 12, border: `1.5px solid ${teamSize === t.id ? "#6366F1" : "rgba(255,255,255,0.07)"}`, background: teamSize === t.id ? "rgba(99,102,241,0.1)" : "rgba(255,255,255,0.02)", color: teamSize === t.id ? "#E8E8F0" : "#9CA3AF", cursor: "pointer", textAlign: "center" }}>
-                    <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 2 }}>{t.label}</div>
-                    <div style={{ fontSize: 11, opacity: 0.6 }}>{t.desc}</div>
-                  </button>
-                ))}
-              </div>
-            </Section>
-            <Section label="02 — Timeline for changes">
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                {TIMELINE_OPTIONS.map(t => <button key={t.id} onClick={() => setTimeline(t.id)} style={chipBtn(timeline === t.id)}>{t.label}</button>)}
-              </div>
-            </Section>
-            <Section label="03 — Scope limits" sublabel="What can't you change right now?">
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                {SCOPE_LIMITS.map(s => <button key={s.id} onClick={() => toggleScope(s.id)} style={chipBtn(scopeLimits.includes(s.id))}>{s.label}</button>)}
-              </div>
-            </Section>
-            <Section label="04 — Anything else? (optional)">
-              <textarea value={otherConstraints} onChange={e => setOtherConstraints(e.target.value)} placeholder="e.g. In code freeze until next month. PM must approve nav changes." rows={3} style={{ ...inputStyle, resize: "vertical", fontFamily: "inherit" }} />
-            </Section>
-            {error && <div style={{ padding: "14px 16px", borderRadius: 10, background: "rgba(255,59,48,0.08)", border: "1px solid rgba(255,59,48,0.25)", color: "#FF6B6B", fontSize: 13, lineHeight: 1.6 }}>{error}</div>}
-            <div style={{ display: "flex", gap: 12 }}>
-              <button onClick={() => setStep("input")} style={{ padding: "14px 24px", borderRadius: 12, border: "1.5px solid rgba(255,255,255,0.1)", background: "transparent", color: "#9CA3AF", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>← Back</button>
-              <button disabled={!canAnalyse()} onClick={analyse} style={{ flex: 1, padding: "16px 32px", borderRadius: 12, border: "none", background: canAnalyse() ? "linear-gradient(135deg, #6366F1, #8B5CF6)" : "rgba(255,255,255,0.05)", color: canAnalyse() ? "#fff" : "#4B5563", fontSize: 15, fontWeight: 700, cursor: canAnalyse() ? "pointer" : "not-allowed", boxShadow: canAnalyse() ? "0 4px 24px rgba(99,102,241,0.3)" : "none" }}>Run Critique →</button>
-            </div>
-          </div>
-        )}
- 
-        {/* ── ANALYSING ── */}
-        {step === "analysing" && (
-          <div style={{ textAlign: "center", padding: "80px 0" }}>
-            <div style={{ fontSize: 48, marginBottom: 24, animation: "spin 2s linear infinite" }}>⬡</div>
-            <div style={{ fontSize: 20, fontWeight: 600, marginBottom: 8 }}>Analysing your design...</div>
-            <div style={{ color: "#6B7280", fontSize: 14 }}>Filtering findings against your constraints</div>
-            <style>{`@keyframes spin{0%{transform:rotate(0deg)}100%{transform:rotate(360deg)}}`}</style>
-          </div>
-        )}
- 
-        {/* ── RESULTS ── */}
-        {view === "result" && critique && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-            <div style={{ background: "rgba(255,255,255,0.03)", borderRadius: 16, padding: 24, border: "1px solid rgba(255,255,255,0.07)", display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 20 }}>
-              <div>
-                <div style={{ fontSize: 11, color: "#6B7280", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 6 }}>Overall Score</div>
-                <div style={{ fontSize: 52, fontWeight: 800, letterSpacing: "-0.03em", lineHeight: 1, color: critique.overallScore >= 7 ? "#34C759" : critique.overallScore >= 5 ? "#FF9500" : "#FF3B30" }}>
-                  {critique.overallScore}<span style={{ fontSize: 22, color: "#4B5563" }}>/10</span>
-                </div>
-              </div>
-              <div style={{ flex: 1, minWidth: 260 }}>
-                <div style={{ fontSize: 11, color: "#6B7280", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 8 }}>Persona Walkthrough</div>
-                <p style={{ fontSize: 14, lineHeight: 1.75, color: "#D1D5DB", margin: 0, fontStyle: "italic" }}>"{critique.narrativeWalkthrough}"</p>
-              </div>
-            </div>
- 
-            <div style={{ background: "rgba(99,102,241,0.08)", borderRadius: 14, padding: "18px 22px", border: "1.5px solid rgba(99,102,241,0.2)" }}>
-              <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "#6366F1", marginBottom: 6 }}>★ Priority Focus</div>
-              <p style={{ margin: 0, fontSize: 14, lineHeight: 1.7 }}>{critique.priorityFocus}</p>
-            </div>
- 
-            <div>
-              <div style={{ display: "flex", gap: 4, marginBottom: 20, background: "rgba(255,255,255,0.03)", borderRadius: 10, padding: 4 }}>
-                {[{ id: "now", label: "Act Now", count: critique.actNow?.length || 0, color: "#34C759" }, { id: "roadmap", label: "Roadmap", count: critique.roadmap?.length || 0, color: "#FF9500" }, { id: "pm", label: "PM Export", count: null, color: "#6366F1" }].map(tab => (
-                  <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-                    style={{ flex: 1, padding: "10px 8px", borderRadius: 8, border: "none", background: activeTab === tab.id ? "rgba(255,255,255,0.07)" : "transparent", color: activeTab === tab.id ? "#E8E8F0" : "#6B7280", cursor: "pointer", fontSize: 13, fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
-                    {tab.label}
-                    {tab.count !== null && <span style={{ fontSize: 11, padding: "1px 7px", borderRadius: 999, background: activeTab === tab.id ? tab.color + "22" : "rgba(255,255,255,0.05)", color: activeTab === tab.id ? tab.color : "#4B5563", fontWeight: 700 }}>{tab.count}</span>}
-                  </button>
-                ))}
-              </div>
- 
-              {activeTab === "now" && (
-                <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                  <div style={{ fontSize: 12, color: "#4B5563", lineHeight: 1.5 }}>Click <strong style={{ color: "#6B7280" }}>Discuss this finding</strong> on any card to push back, add context, or ask for alternatives.</div>
-                  {(critique.actNow || []).length === 0
-                    ? <div style={{ padding: "32px", textAlign: "center", color: "#4B5563", fontSize: 14 }}>No immediate actions — check the Roadmap tab.</div>
-                    : (critique.actNow || []).map((fp, i) => <FindingThread key={i} finding={fp} type="now" productType={productType} personaDesc={personaDesc} constraintsSummary={constraintsSummary} simulationId={currentSimId} savedMessages={[]} />)}
-                </div>
-              )}
- 
-              {activeTab === "roadmap" && (
-                <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                  <div style={{ padding: "12px 16px", borderRadius: 10, background: "rgba(255,149,0,0.06)", border: "1px solid rgba(255,149,0,0.15)", fontSize: 12, color: "#9CA3AF", lineHeight: 1.6 }}>
-                    Outside your current constraints. Use <strong style={{ color: "#E8E8F0" }}>PM Export</strong> to share these.
-                  </div>
-                  {(critique.roadmap || []).length === 0
-                    ? <div style={{ padding: "32px", textAlign: "center", color: "#4B5563", fontSize: 14 }}>Nothing for the roadmap — everything fits your constraints.</div>
-                    : (critique.roadmap || []).map((fp, i) => <FindingThread key={i} finding={fp} type="roadmap" productType={productType} personaDesc={personaDesc} constraintsSummary={constraintsSummary} simulationId={currentSimId} savedMessages={[]} />)}
-                </div>
-              )}
- 
-              {activeTab === "pm" && (
-                <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                  <div style={{ padding: "12px 16px", borderRadius: 10, background: "rgba(99,102,241,0.06)", border: "1px solid rgba(99,102,241,0.15)", fontSize: 12, color: "#9CA3AF", lineHeight: 1.6 }}>
-                    Formatted for your product manager — framed around user impact and business value.
-                  </div>
-                  <div style={{ background: "rgba(255,255,255,0.02)", borderRadius: 12, padding: "20px", border: "1px solid rgba(255,255,255,0.06)", fontFamily: "monospace", fontSize: 12, lineHeight: 1.8, color: "#9CA3AF", whiteSpace: "pre-wrap", maxHeight: 400, overflowY: "auto" }}>
-                    {generatePMSummary()}
-                  </div>
-                  <button onClick={() => { navigator.clipboard.writeText(generatePMSummary()); setCopySuccess(true); setTimeout(() => setCopySuccess(false), 2000); }}
-                    style={{ padding: "14px 24px", borderRadius: 12, border: "none", background: copySuccess ? "rgba(52,199,89,0.15)" : "linear-gradient(135deg, #6366F1, #8B5CF6)", color: copySuccess ? "#34C759" : "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer", transition: "all 0.2s" }}>
-                    {copySuccess ? "✓ Copied!" : "Copy PM Summary"}
-                  </button>
-                </div>
-              )}
-            </div>
- 
-            {(critique.strengths || []).length > 0 && (
-              <div>
-                <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "#6B7280", marginBottom: 12 }}>Strengths</div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  {critique.strengths.map((s, i) => (
-                    <div key={i} style={{ padding: "12px 16px", borderRadius: 10, background: "rgba(52,199,89,0.06)", border: "1px solid rgba(52,199,89,0.15)", fontSize: 13, lineHeight: 1.6, color: "#D1D5DB", display: "flex", gap: 10 }}>
-                      <span style={{ color: "#34C759", flexShrink: 0 }}>✓</span>{s}
+        {/* ── MAIN APP (logged in) ── */}
+        {user && (
+          <>
+            {/* HOME */}
+            {view === "home" && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+                <button onClick={() => setView("new")}
+                  style={{ padding: "16px 32px", borderRadius: 12, border: "none", background: "linear-gradient(135deg, #6366F1, #8B5CF6)", color: "#fff", fontSize: 15, fontWeight: 700, cursor: "pointer", boxShadow: "0 4px 24px rgba(99,102,241,0.3)", alignSelf: "flex-start" }}>
+                  Run a Simulation →
+                </button>
+                {simulations.length > 0 && (
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "#6B7280", marginBottom: 14 }}>Recent Simulations</div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                      {simulations.slice(0, 3).map(sim => <SimulationCard key={sim.id} sim={sim} onView={loadSimulationDetail} />)}
                     </div>
-                  ))}
+                  </div>
+                )}
+              </div>
+            )}
+ 
+            {/* NEW CRITIQUE: STEP 1 */}
+            {view === "new" && step === "input" && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 28 }}>
+                <Section label="01 — What are you analysing?">
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10 }}>
+                    {[{ id: "figma", icon: "◈", label: "Figma Link" }, { id: "screenshots", icon: "⊞", label: "Screenshots" }, { id: "recording", icon: "◉", label: "Screen Recording" }].map(opt => (
+                      <button key={opt.id} onClick={() => { setInputType(opt.id); setFiles([]); }}
+                        style={{ padding: "16px 12px", borderRadius: 12, border: `1.5px solid ${inputType === opt.id ? "#6366F1" : "rgba(255,255,255,0.07)"}`, background: inputType === opt.id ? "rgba(99,102,241,0.1)" : "rgba(255,255,255,0.02)", color: inputType === opt.id ? "#E8E8F0" : "#6B7280", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, fontSize: 22 }}>
+                        <span>{opt.icon}</span>
+                        <span style={{ fontSize: 12, fontWeight: 600 }}>{opt.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                  {inputType === "figma" && <input value={figmaUrl} onChange={e => setFigmaUrl(e.target.value)} placeholder="https://www.figma.com/proto/..." style={inputStyle} />}
+                  {(inputType === "screenshots" || inputType === "recording") && (
+                    <div onDragOver={e => { e.preventDefault(); setDragOver(true); }} onDragLeave={() => setDragOver(false)}
+                      onDrop={e => { e.preventDefault(); setDragOver(false); handleFiles(e.dataTransfer.files); }}
+                      onClick={() => fileInputRef.current?.click()}
+                      style={{ border: `1.5px dashed ${dragOver ? "#6366F1" : "rgba(255,255,255,0.1)"}`, borderRadius: 12, padding: "32px 24px", textAlign: "center", cursor: "pointer", background: dragOver ? "rgba(99,102,241,0.06)" : "rgba(255,255,255,0.01)" }}>
+                      <div style={{ fontSize: 28, marginBottom: 8 }}>{inputType === "recording" ? "🎬" : "🖼️"}</div>
+                      <div style={{ color: "#9CA3AF", fontSize: 14 }}>{inputType === "recording" ? "Drop your screen recording (MP4, MOV)" : "Drop screenshots here or click to browse"}</div>
+                      {files.length > 0 && <div style={{ marginTop: 12, color: "#6366F1", fontSize: 13, fontWeight: 600 }}>{files.length} file{files.length > 1 ? "s" : ""} ready ✓</div>}
+                      <input ref={fileInputRef} type="file" multiple={inputType === "screenshots"} accept={inputType === "recording" ? "video/*" : "image/*"} style={{ display: "none" }} onChange={e => handleFiles(e.target.files)} />
+                    </div>
+                  )}
+                </Section>
+                <Section label="02 — Product type">
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                    {PRODUCT_TYPES.map(pt => <button key={pt} onClick={() => setProductType(pt)} style={chipBtn(productType === pt)}>{pt}</button>)}
+                  </div>
+                </Section>
+                <Section label="03 — Who is your user?">
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 10 }}>
+                    {PERSONAS.map(p => (
+                      <button key={p.id} onClick={() => setSelectedPersona(p.id)}
+                        style={{ padding: "14px 16px", borderRadius: 12, border: `1.5px solid ${selectedPersona === p.id ? "#6366F1" : "rgba(255,255,255,0.07)"}`, background: selectedPersona === p.id ? "rgba(99,102,241,0.1)" : "rgba(255,255,255,0.02)", color: selectedPersona === p.id ? "#E8E8F0" : "#9CA3AF", cursor: "pointer", textAlign: "left" }}>
+                        <div style={{ fontSize: 20, marginBottom: 4 }}>{p.emoji}</div>
+                        <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 2 }}>{p.label}</div>
+                        <div style={{ fontSize: 11, lineHeight: 1.4, opacity: 0.7 }}>{p.description}</div>
+                      </button>
+                    ))}
+                  </div>
+                  {selectedPersona === "custom" && <textarea value={customPersona} onChange={e => setCustomPersona(e.target.value)} placeholder="Describe your user: goals, tech comfort, context..." rows={3} style={{ ...inputStyle, resize: "vertical", fontFamily: "inherit" }} />}
+                </Section>
+                <Section label="04 — Additional context (optional)">
+                  <textarea value={context} onChange={e => setContext(e.target.value)} placeholder="e.g. Checkout flow for a fashion app targeting 25–40 year olds." rows={3} style={{ ...inputStyle, resize: "vertical", fontFamily: "inherit" }} />
+                </Section>
+                <Section label="05 — Simulation name (optional)" sublabel="Leave blank to auto-generate from product type, persona and date">
+                  <input value={simName} onChange={e => setSimName(e.target.value)} placeholder="e.g. Anchor — Checkout Flow v2" style={inputStyle} />
+                </Section>
+                <button disabled={!canProceedToConstraints()} onClick={() => setStep("constraints")}
+                  style={{ padding: "16px 32px", borderRadius: 12, border: "none", background: canProceedToConstraints() ? "linear-gradient(135deg, #6366F1, #8B5CF6)" : "rgba(255,255,255,0.05)", color: canProceedToConstraints() ? "#fff" : "#4B5563", fontSize: 15, fontWeight: 700, cursor: canProceedToConstraints() ? "pointer" : "not-allowed", boxShadow: canProceedToConstraints() ? "0 4px 24px rgba(99,102,241,0.3)" : "none" }}>
+                  Next — Set Constraints →
+                </button>
+              </div>
+            )}
+ 
+            {/* STEP 2: CONSTRAINTS */}
+            {view === "new" && step === "constraints" && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 28 }}>
+                <div style={{ padding: "16px 20px", borderRadius: 12, background: "rgba(99,102,241,0.06)", border: "1px solid rgba(99,102,241,0.15)", fontSize: 13, color: "#9CA3AF", lineHeight: 1.6 }}>
+                  Tell us what you're working with. The simulation will split findings into what you can <strong style={{ color: "#E8E8F0" }}>fix now</strong> vs what belongs on the <strong style={{ color: "#E8E8F0" }}>roadmap</strong>.
+                </div>
+                <Section label="01 — Team size">
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10 }}>
+                    {TEAM_SIZES.map(t => (
+                      <button key={t.id} onClick={() => setTeamSize(t.id)}
+                        style={{ padding: "14px 10px", borderRadius: 12, border: `1.5px solid ${teamSize === t.id ? "#6366F1" : "rgba(255,255,255,0.07)"}`, background: teamSize === t.id ? "rgba(99,102,241,0.1)" : "rgba(255,255,255,0.02)", color: teamSize === t.id ? "#E8E8F0" : "#9CA3AF", cursor: "pointer", textAlign: "center" }}>
+                        <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 2 }}>{t.label}</div>
+                        <div style={{ fontSize: 11, opacity: 0.6 }}>{t.desc}</div>
+                      </button>
+                    ))}
+                  </div>
+                </Section>
+                <Section label="02 — Timeline for changes">
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                    {TIMELINE_OPTIONS.map(t => <button key={t.id} onClick={() => setTimeline(t.id)} style={chipBtn(timeline === t.id)}>{t.label}</button>)}
+                  </div>
+                </Section>
+                <Section label="03 — Scope limits" sublabel="What can't you change right now?">
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                    {SCOPE_LIMITS.map(s => <button key={s.id} onClick={() => toggleScope(s.id)} style={chipBtn(scopeLimits.includes(s.id))}>{s.label}</button>)}
+                  </div>
+                </Section>
+                <Section label="04 — Anything else? (optional)">
+                  <textarea value={otherConstraints} onChange={e => setOtherConstraints(e.target.value)} placeholder="e.g. In code freeze until next month. PM must approve nav changes." rows={3} style={{ ...inputStyle, resize: "vertical", fontFamily: "inherit" }} />
+                </Section>
+                {error && <div style={{ padding: "14px 16px", borderRadius: 10, background: "rgba(255,59,48,0.08)", border: "1px solid rgba(255,59,48,0.25)", color: "#FF6B6B", fontSize: 13, lineHeight: 1.6 }}>{error}</div>}
+                <div style={{ display: "flex", gap: 12 }}>
+                  <button onClick={() => setStep("input")} style={{ padding: "14px 24px", borderRadius: 12, border: "1.5px solid rgba(255,255,255,0.1)", background: "transparent", color: "#9CA3AF", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>← Back</button>
+                  <button disabled={!canAnalyse()} onClick={analyse} style={{ flex: 1, padding: "16px 32px", borderRadius: 12, border: "none", background: canAnalyse() ? "linear-gradient(135deg, #6366F1, #8B5CF6)" : "rgba(255,255,255,0.05)", color: canAnalyse() ? "#fff" : "#4B5563", fontSize: 15, fontWeight: 700, cursor: canAnalyse() ? "pointer" : "not-allowed", boxShadow: canAnalyse() ? "0 4px 24px rgba(99,102,241,0.3)" : "none" }}>Run Simulation →</button>
                 </div>
               </div>
             )}
  
-            <button onClick={reset} style={{ padding: "14px 28px", borderRadius: 12, border: "1.5px solid rgba(255,255,255,0.1)", background: "transparent", color: "#9CA3AF", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
-              ← Back to Home
-            </button>
-          </div>
-        )}
- 
-        {/* ── HISTORY ── */}
-        {view === "history" && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            {simulations.length === 0
-              ? <div style={{ textAlign: "center", padding: "60px 0", color: "#4B5563", fontSize: 14 }}>No simulations yet. Run your first critique to get started.</div>
-              : simulations.map(sim => <SimulationCard key={sim.id} sim={sim} onView={loadSimulationDetail} />)}
-          </div>
-        )}
- 
-        {/* ── DETAIL VIEW ── */}
-        {view === "detail" && selectedSim && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-            <div style={{ background: "rgba(255,255,255,0.03)", borderRadius: 16, padding: 24, border: "1px solid rgba(255,255,255,0.07)", display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 20 }}>
-              <div>
-                <div style={{ fontSize: 11, color: "#6B7280", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 6 }}>Overall Score</div>
-                <div style={{ fontSize: 52, fontWeight: 800, letterSpacing: "-0.03em", lineHeight: 1, color: selectedSim.overall_score >= 7 ? "#34C759" : selectedSim.overall_score >= 5 ? "#FF9500" : "#FF3B30" }}>
-                  {selectedSim.overall_score}<span style={{ fontSize: 22, color: "#4B5563" }}>/10</span>
-                </div>
+            {/* ANALYSING */}
+            {step === "analysing" && (
+              <div style={{ textAlign: "center", padding: "80px 0" }}>
+                <div style={{ fontSize: 48, marginBottom: 24, animation: "spin 2s linear infinite" }}>⬡</div>
+                <div style={{ fontSize: 20, fontWeight: 600, marginBottom: 8 }}>Running simulation...</div>
+                <div style={{ color: "#6B7280", fontSize: 14 }}>Simulating user experience against your constraints</div>
+                <style>{`@keyframes spin{0%{transform:rotate(0deg)}100%{transform:rotate(360deg)}}`}</style>
               </div>
-              <div style={{ flex: 1, minWidth: 260 }}>
-                <div style={{ fontSize: 11, color: "#6B7280", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 8 }}>Persona Walkthrough</div>
-                <p style={{ fontSize: 14, lineHeight: 1.75, color: "#D1D5DB", margin: 0, fontStyle: "italic" }}>"{selectedSim.narrative}"</p>
-              </div>
-            </div>
+            )}
  
-            <div style={{ background: "rgba(99,102,241,0.08)", borderRadius: 14, padding: "18px 22px", border: "1.5px solid rgba(99,102,241,0.2)" }}>
-              <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "#6366F1", marginBottom: 6 }}>★ Priority Focus</div>
-              <p style={{ margin: 0, fontSize: 14, lineHeight: 1.7 }}>{selectedSim.priority_focus}</p>
-            </div>
- 
-            <div>
-              <div style={{ display: "flex", gap: 4, marginBottom: 20, background: "rgba(255,255,255,0.03)", borderRadius: 10, padding: 4 }}>
-                {[{ id: "now", label: "Act Now", count: selectedSim.act_now?.length || 0, color: "#34C759" }, { id: "roadmap", label: "Roadmap", count: selectedSim.roadmap?.length || 0, color: "#FF9500" }, { id: "pm", label: "PM Export", count: null, color: "#6366F1" }].map(tab => (
-                  <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-                    style={{ flex: 1, padding: "10px 8px", borderRadius: 8, border: "none", background: activeTab === tab.id ? "rgba(255,255,255,0.07)" : "transparent", color: activeTab === tab.id ? "#E8E8F0" : "#6B7280", cursor: "pointer", fontSize: 13, fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
-                    {tab.label}
-                    {tab.count !== null && <span style={{ fontSize: 11, padding: "1px 7px", borderRadius: 999, background: activeTab === tab.id ? tab.color + "22" : "rgba(255,255,255,0.05)", color: activeTab === tab.id ? tab.color : "#4B5563", fontWeight: 700 }}>{tab.count}</span>}
-                  </button>
-                ))}
-              </div>
- 
-              {activeTab === "now" && (
-                <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                  {(selectedSim.act_now || []).map((fp, i) => (
-                    <FindingThread key={i} finding={fp} type="now"
-                      productType={selectedSim.product_type}
-                      personaDesc={selectedSim.persona}
-                      constraintsSummary={JSON.stringify(selectedSim.constraints)}
-                      simulationId={selectedSim.id}
-                      savedMessages={simConversations[fp.title] || []} />
-                  ))}
-                </div>
-              )}
- 
-              {activeTab === "roadmap" && (
-                <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                  {(selectedSim.roadmap || []).map((fp, i) => (
-                    <FindingThread key={i} finding={fp} type="roadmap"
-                      productType={selectedSim.product_type}
-                      personaDesc={selectedSim.persona}
-                      constraintsSummary={JSON.stringify(selectedSim.constraints)}
-                      simulationId={selectedSim.id}
-                      savedMessages={simConversations[fp.title] || []} />
-                  ))}
-                </div>
-              )}
- 
-              {activeTab === "pm" && (
-                <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                  <div style={{ background: "rgba(255,255,255,0.02)", borderRadius: 12, padding: "20px", border: "1px solid rgba(255,255,255,0.06)", fontFamily: "monospace", fontSize: 12, lineHeight: 1.8, color: "#9CA3AF", whiteSpace: "pre-wrap", maxHeight: 400, overflowY: "auto" }}>
-                    {selectedSim.pm_summary}
+            {/* RESULTS */}
+            {view === "result" && critique && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+                <div style={{ background: "rgba(255,255,255,0.03)", borderRadius: 16, padding: 24, border: "1px solid rgba(255,255,255,0.07)", display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 20 }}>
+                  <div>
+                    <div style={{ fontSize: 11, color: "#6B7280", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 6 }}>Overall Score</div>
+                    <div style={{ fontSize: 52, fontWeight: 800, letterSpacing: "-0.03em", lineHeight: 1, color: critique.overallScore >= 7 ? "#34C759" : critique.overallScore >= 5 ? "#FF9500" : "#FF3B30" }}>
+                      {critique.overallScore}<span style={{ fontSize: 22, color: "#4B5563" }}>/10</span>
+                    </div>
                   </div>
-                  <button onClick={() => { navigator.clipboard.writeText(selectedSim.pm_summary); setCopySuccess(true); setTimeout(() => setCopySuccess(false), 2000); }}
-                    style={{ padding: "14px 24px", borderRadius: 12, border: "none", background: copySuccess ? "rgba(52,199,89,0.15)" : "linear-gradient(135deg, #6366F1, #8B5CF6)", color: copySuccess ? "#34C759" : "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer", transition: "all 0.2s" }}>
-                    {copySuccess ? "✓ Copied!" : "Copy PM Summary"}
-                  </button>
+                  <div style={{ flex: 1, minWidth: 260 }}>
+                    <div style={{ fontSize: 11, color: "#6B7280", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 8 }}>Persona Walkthrough</div>
+                    <p style={{ fontSize: 14, lineHeight: 1.75, color: "#D1D5DB", margin: 0, fontStyle: "italic" }}>"{critique.narrativeWalkthrough}"</p>
+                  </div>
                 </div>
-              )}
-            </div>
  
-            <button onClick={() => { setView("history"); setActiveTab("now"); }}
-              style={{ padding: "14px 28px", borderRadius: 12, border: "1.5px solid rgba(255,255,255,0.1)", background: "transparent", color: "#9CA3AF", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
-              ← Back to History
-            </button>
-          </div>
+                <div style={{ background: "rgba(99,102,241,0.08)", borderRadius: 14, padding: "18px 22px", border: "1.5px solid rgba(99,102,241,0.2)" }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "#6366F1", marginBottom: 6 }}>★ Priority Focus</div>
+                  <p style={{ margin: 0, fontSize: 14, lineHeight: 1.7 }}>{critique.priorityFocus}</p>
+                </div>
+ 
+                <div>
+                  <div style={{ display: "flex", gap: 4, marginBottom: 20, background: "rgba(255,255,255,0.03)", borderRadius: 10, padding: 4 }}>
+                    {[{ id: "now", label: "Act Now", count: critique.actNow?.length || 0, color: "#34C759" }, { id: "roadmap", label: "Roadmap", count: critique.roadmap?.length || 0, color: "#FF9500" }, { id: "pm", label: "PM Export", count: null, color: "#6366F1" }].map(tab => (
+                      <button key={tab.id} onClick={() => setActiveTab(tab.id)}
+                        style={{ flex: 1, padding: "10px 8px", borderRadius: 8, border: "none", background: activeTab === tab.id ? "rgba(255,255,255,0.07)" : "transparent", color: activeTab === tab.id ? "#E8E8F0" : "#6B7280", cursor: "pointer", fontSize: 13, fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+                        {tab.label}
+                        {tab.count !== null && <span style={{ fontSize: 11, padding: "1px 7px", borderRadius: 999, background: activeTab === tab.id ? tab.color + "22" : "rgba(255,255,255,0.05)", color: activeTab === tab.id ? tab.color : "#4B5563", fontWeight: 700 }}>{tab.count}</span>}
+                      </button>
+                    ))}
+                  </div>
+ 
+                  {activeTab === "now" && (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                      <div style={{ fontSize: 12, color: "#4B5563", lineHeight: 1.5 }}>Click <strong style={{ color: "#6B7280" }}>Discuss this finding</strong> on any card to push back, add context, or ask for alternatives.</div>
+                      {(critique.actNow || []).length === 0
+                        ? <div style={{ padding: "32px", textAlign: "center", color: "#4B5563", fontSize: 14 }}>No immediate actions — check the Roadmap tab.</div>
+                        : (critique.actNow || []).map((fp, i) => <FindingThread key={i} finding={fp} type="now" productType={productType} personaDesc={personaDesc} constraintsSummary={constraintsSummary} simulationId={currentSimId} savedMessages={[]} />)}
+                    </div>
+                  )}
+ 
+                  {activeTab === "roadmap" && (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                      <div style={{ padding: "12px 16px", borderRadius: 10, background: "rgba(255,149,0,0.06)", border: "1px solid rgba(255,149,0,0.15)", fontSize: 12, color: "#9CA3AF", lineHeight: 1.6 }}>
+                        Outside your current constraints. Use <strong style={{ color: "#E8E8F0" }}>PM Export</strong> to share these.
+                      </div>
+                      {(critique.roadmap || []).length === 0
+                        ? <div style={{ padding: "32px", textAlign: "center", color: "#4B5563", fontSize: 14 }}>Nothing for the roadmap — everything fits your constraints.</div>
+                        : (critique.roadmap || []).map((fp, i) => <FindingThread key={i} finding={fp} type="roadmap" productType={productType} personaDesc={personaDesc} constraintsSummary={constraintsSummary} simulationId={currentSimId} savedMessages={[]} />)}
+                    </div>
+                  )}
+ 
+                  {activeTab === "pm" && (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                      <div style={{ padding: "12px 16px", borderRadius: 10, background: "rgba(99,102,241,0.06)", border: "1px solid rgba(99,102,241,0.15)", fontSize: 12, color: "#9CA3AF", lineHeight: 1.6 }}>
+                        Formatted for your product manager — framed around user impact and business value.
+                      </div>
+                      <div style={{ background: "rgba(255,255,255,0.02)", borderRadius: 12, padding: "20px", border: "1px solid rgba(255,255,255,0.06)", fontFamily: "monospace", fontSize: 12, lineHeight: 1.8, color: "#9CA3AF", whiteSpace: "pre-wrap", maxHeight: 400, overflowY: "auto" }}>
+                        {generatePMSummary()}
+                      </div>
+                      <button onClick={() => { navigator.clipboard.writeText(generatePMSummary()); setCopySuccess(true); setTimeout(() => setCopySuccess(false), 2000); }}
+                        style={{ padding: "14px 24px", borderRadius: 12, border: "none", background: copySuccess ? "rgba(52,199,89,0.15)" : "linear-gradient(135deg, #6366F1, #8B5CF6)", color: copySuccess ? "#34C759" : "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer", transition: "all 0.2s" }}>
+                        {copySuccess ? "✓ Copied!" : "Copy PM Summary"}
+                      </button>
+                    </div>
+                  )}
+                </div>
+ 
+                {(critique.strengths || []).length > 0 && (
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "#6B7280", marginBottom: 12 }}>Strengths</div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      {critique.strengths.map((s, i) => (
+                        <div key={i} style={{ padding: "12px 16px", borderRadius: 10, background: "rgba(52,199,89,0.06)", border: "1px solid rgba(52,199,89,0.15)", fontSize: 13, lineHeight: 1.6, color: "#D1D5DB", display: "flex", gap: 10 }}>
+                          <span style={{ color: "#34C759", flexShrink: 0 }}>✓</span>{s}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+ 
+                <button onClick={reset} style={{ padding: "14px 28px", borderRadius: 12, border: "1.5px solid rgba(255,255,255,0.1)", background: "transparent", color: "#9CA3AF", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
+                  ← Back to Home
+                </button>
+              </div>
+            )}
+ 
+            {/* HISTORY */}
+            {view === "history" && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                {simulations.length === 0
+                  ? <div style={{ textAlign: "center", padding: "60px 0", color: "#4B5563", fontSize: 14 }}>No simulations yet. Run your first simulation to get started.</div>
+                  : simulations.map(sim => <SimulationCard key={sim.id} sim={sim} onView={loadSimulationDetail} />)}
+              </div>
+            )}
+ 
+            {/* DETAIL VIEW */}
+            {view === "detail" && selectedSim && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+                <div style={{ background: "rgba(255,255,255,0.03)", borderRadius: 16, padding: 24, border: "1px solid rgba(255,255,255,0.07)", display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 20 }}>
+                  <div>
+                    <div style={{ fontSize: 11, color: "#6B7280", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 6 }}>Overall Score</div>
+                    <div style={{ fontSize: 52, fontWeight: 800, letterSpacing: "-0.03em", lineHeight: 1, color: selectedSim.overall_score >= 7 ? "#34C759" : selectedSim.overall_score >= 5 ? "#FF9500" : "#FF3B30" }}>
+                      {selectedSim.overall_score}<span style={{ fontSize: 22, color: "#4B5563" }}>/10</span>
+                    </div>
+                  </div>
+                  <div style={{ flex: 1, minWidth: 260 }}>
+                    <div style={{ fontSize: 11, color: "#6B7280", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 8 }}>Persona Walkthrough</div>
+                    <p style={{ fontSize: 14, lineHeight: 1.75, color: "#D1D5DB", margin: 0, fontStyle: "italic" }}>"{selectedSim.narrative}"</p>
+                  </div>
+                </div>
+ 
+                <div style={{ background: "rgba(99,102,241,0.08)", borderRadius: 14, padding: "18px 22px", border: "1.5px solid rgba(99,102,241,0.2)" }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "#6366F1", marginBottom: 6 }}>★ Priority Focus</div>
+                  <p style={{ margin: 0, fontSize: 14, lineHeight: 1.7 }}>{selectedSim.priority_focus}</p>
+                </div>
+ 
+                <div>
+                  <div style={{ display: "flex", gap: 4, marginBottom: 20, background: "rgba(255,255,255,0.03)", borderRadius: 10, padding: 4 }}>
+                    {[{ id: "now", label: "Act Now", count: selectedSim.act_now?.length || 0, color: "#34C759" }, { id: "roadmap", label: "Roadmap", count: selectedSim.roadmap?.length || 0, color: "#FF9500" }, { id: "pm", label: "PM Export", count: null, color: "#6366F1" }].map(tab => (
+                      <button key={tab.id} onClick={() => setActiveTab(tab.id)}
+                        style={{ flex: 1, padding: "10px 8px", borderRadius: 8, border: "none", background: activeTab === tab.id ? "rgba(255,255,255,0.07)" : "transparent", color: activeTab === tab.id ? "#E8E8F0" : "#6B7280", cursor: "pointer", fontSize: 13, fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+                        {tab.label}
+                        {tab.count !== null && <span style={{ fontSize: 11, padding: "1px 7px", borderRadius: 999, background: activeTab === tab.id ? tab.color + "22" : "rgba(255,255,255,0.05)", color: activeTab === tab.id ? tab.color : "#4B5563", fontWeight: 700 }}>{tab.count}</span>}
+                      </button>
+                    ))}
+                  </div>
+ 
+                  {activeTab === "now" && (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                      {(selectedSim.act_now || []).map((fp, i) => (
+                        <FindingThread key={i} finding={fp} type="now" productType={selectedSim.product_type} personaDesc={selectedSim.persona} constraintsSummary={JSON.stringify(selectedSim.constraints)} simulationId={selectedSim.id} savedMessages={simConversations[fp.title] || []} />
+                      ))}
+                    </div>
+                  )}
+ 
+                  {activeTab === "roadmap" && (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                      {(selectedSim.roadmap || []).map((fp, i) => (
+                        <FindingThread key={i} finding={fp} type="roadmap" productType={selectedSim.product_type} personaDesc={selectedSim.persona} constraintsSummary={JSON.stringify(selectedSim.constraints)} simulationId={selectedSim.id} savedMessages={simConversations[fp.title] || []} />
+                      ))}
+                    </div>
+                  )}
+ 
+                  {activeTab === "pm" && (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                      <div style={{ background: "rgba(255,255,255,0.02)", borderRadius: 12, padding: "20px", border: "1px solid rgba(255,255,255,0.06)", fontFamily: "monospace", fontSize: 12, lineHeight: 1.8, color: "#9CA3AF", whiteSpace: "pre-wrap", maxHeight: 400, overflowY: "auto" }}>
+                        {selectedSim.pm_summary}
+                      </div>
+                      <button onClick={() => { navigator.clipboard.writeText(selectedSim.pm_summary); setCopySuccess(true); setTimeout(() => setCopySuccess(false), 2000); }}
+                        style={{ padding: "14px 24px", borderRadius: 12, border: "none", background: copySuccess ? "rgba(52,199,89,0.15)" : "linear-gradient(135deg, #6366F1, #8B5CF6)", color: copySuccess ? "#34C759" : "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer", transition: "all 0.2s" }}>
+                        {copySuccess ? "✓ Copied!" : "Copy PM Summary"}
+                      </button>
+                    </div>
+                  )}
+                </div>
+ 
+                <button onClick={() => { setView("history"); setActiveTab("now"); }}
+                  style={{ padding: "14px 28px", borderRadius: 12, border: "1.5px solid rgba(255,255,255,0.1)", background: "transparent", color: "#9CA3AF", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
+                  ← Back to History
+                </button>
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>
   );
 }
- 
