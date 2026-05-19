@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { supabase } from "./supabase";
+import ResultsSection from "./ResultsSection.jsx";
  
-// ── Constants ──────────────────────────────────────────────────────────────
 const PERSONAS = [
   { id: "first-time", label: "First-Time User", emoji: "🌱", description: "No prior context, discovering the product for the first time", traits: "Cautious, reads carefully, easily confused by jargon, needs clear signposting" },
   { id: "power-user", label: "Power User", emoji: "⚡", description: "Experienced, efficiency-driven, knows what they want", traits: "Impatient with friction, uses shortcuts, frustrated by unnecessary steps" },
@@ -31,40 +31,16 @@ const SCOPE_LIMITS = [
   { id: "no-limits", label: "No limits" }
 ];
  
-// ── Design tokens ──────────────────────────────────────────────────────────
 const C = {
-  bg: "#F7F6F3",
-  surface: "#FFFFFF",
-  surfaceAlt: "#F0EEE9",
-  border: "rgba(0,0,0,0.08)",
-  borderMed: "rgba(0,0,0,0.12)",
-  text: "#1A1A1A",
-  textMed: "#4A4A4A",
-  textMuted: "#8A8A8A",
-  accent: "#1A1A2E",
-  accentHover: "#16213E",
-  indigo: "#4F46E5",
-  indigoLight: "rgba(79,70,229,0.08)",
-  indigoBorder: "rgba(79,70,229,0.2)",
-  green: "#16A34A",
-  greenLight: "rgba(22,163,74,0.08)",
-  greenBorder: "rgba(22,163,74,0.2)",
-  amber: "#D97706",
-  amberLight: "rgba(217,119,6,0.08)",
-  amberBorder: "rgba(217,119,6,0.2)",
-  red: "#DC2626",
-  redLight: "rgba(220,38,38,0.08)",
-  redBorder: "rgba(220,38,38,0.2)",
-  yellow: "#CA8A04",
-  yellowLight: "rgba(202,138,4,0.08)",
+  bg: "#F7F6F3", surface: "#FFFFFF", surfaceAlt: "#F0EEE9",
+  border: "rgba(0,0,0,0.08)", borderMed: "rgba(0,0,0,0.18)",
+  text: "#1A1A1A", textMed: "#4A4A4A", textMuted: "#6B7280",
+  accent: "#1A1A2E", indigo: "#4F46E5", indigoLight: "rgba(79,70,229,0.08)", indigoBorder: "rgba(79,70,229,0.2)",
+  green: "#16A34A", greenLight: "rgba(22,163,74,0.08)", greenBorder: "rgba(22,163,74,0.2)",
+  amber: "#D97706", amberLight: "rgba(217,119,6,0.08)", amberBorder: "rgba(217,119,6,0.2)",
+  red: "#DC2626", redLight: "rgba(220,38,38,0.08)", redBorder: "rgba(220,38,38,0.2)",
 };
  
-const sevColor = (s) => ({ critical: C.red, high: C.amber, medium: C.yellow, low: C.green }[s] || C.textMuted);
-const sevBg = (s) => ({ critical: C.redLight, high: C.amberLight, medium: C.yellowLight, low: C.greenLight }[s] || "rgba(0,0,0,0.03)");
-const sevBorder = (s) => ({ critical: C.redBorder, high: C.amberBorder, medium: "rgba(202,138,4,0.2)", low: C.greenBorder }[s] || C.border);
-const effortColor = (e) => ({ low: C.green, medium: C.amber, high: C.red }[e] || C.textMuted);
- 
-// ── Shared styles ──────────────────────────────────────────────────────────
 const inputSt = {
   width: "100%", padding: "12px 14px", borderRadius: 8,
   border: `1.5px solid ${C.border}`, background: C.surface,
@@ -77,22 +53,10 @@ const chipSt = (active) => ({
   background: active ? C.indigoLight : "transparent",
   color: active ? C.indigo : C.textMuted, cursor: "pointer", transition: "all 0.15s"
 });
-const btnPrimary = {
-  padding: "12px 24px", borderRadius: 8, border: "none",
-  background: C.accent, color: "#fff", fontSize: 14, fontWeight: 600,
-  cursor: "pointer", transition: "background 0.15s"
-};
-const btnGhost = {
-  padding: "10px 18px", borderRadius: 8,
-  border: `1.5px solid ${C.border}`, background: "transparent",
-  color: C.textMed, fontSize: 13, fontWeight: 600, cursor: "pointer"
-};
-const card = {
-  background: C.surface, borderRadius: 12,
-  border: `1px solid ${C.border}`, padding: "20px 24px"
-};
+const btnPrimary = { padding: "12px 24px", borderRadius: 8, border: "none", background: C.accent, color: "#fff", fontSize: 14, fontWeight: 600, cursor: "pointer" };
+const btnGhost = { padding: "10px 18px", borderRadius: 8, border: `1.5px solid ${C.borderMed}`, background: "transparent", color: C.textMed, fontSize: 13, fontWeight: 600, cursor: "pointer" };
+const card = { background: C.surface, borderRadius: 12, border: `1px solid ${C.border}`, padding: "20px 24px" };
  
-// ── Section label ──────────────────────────────────────────────────────────
 function Section({ label, sublabel, children }) {
   return (
     <div>
@@ -105,254 +69,70 @@ function Section({ label, sublabel, children }) {
   );
 }
  
-// ── Finding thread ─────────────────────────────────────────────────────────
-function FindingThread({ finding, type, productType, personaDesc, constraintsSummary, simulationId, savedMessages }) {
-  const [open, setOpen] = useState(false);
-  const [messages, setMessages] = useState(savedMessages || []);
-  const [input, setInput] = useState("");
-  const [loading, setLoading] = useState(false);
-  const bottomRef = useRef();
- 
-  const saveConversation = async (updatedMessages) => {
-    if (!simulationId) return;
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
-    await supabase.from("conversations").upsert({
-      simulation_id: simulationId,
-      finding_title: finding.title,
-      finding_type: type,
-      messages: updatedMessages,
-      user_id: user.id
-    }, { onConflict: "simulation_id,finding_title" });
-  };
- 
-  const sendMessage = async () => {
-    const text = input.trim();
-    if (!text || loading) return;
-    const newMessages = [...messages, { role: "user", text }];
-    setMessages(newMessages);
-    setInput("");
-    setLoading(true);
-    try {
-      const systemPrompt = `You are an expert UX design critic having a focused conversation about one specific design finding. Stay anchored to this finding only. Be concise — 2-4 sentences per reply. When the designer provides context or constraints, acknowledge them and either revise your thinking, suggest a workaround within those constraints, or validate their reasoning. Never repeat the original finding back verbatim.
- 
-ORIGINAL FINDING:
-Title: ${finding.title}
-Severity: ${finding.severity}
-Description: ${finding.description}
-Recommendation: ${finding.recommendation}
-${finding.userImpact ? `User Impact: ${finding.userImpact}` : ""}
- 
-DESIGN CONTEXT:
-Product: ${productType}
-Persona: ${personaDesc}
-Constraints: ${constraintsSummary}`;
- 
-      const apiMessages = newMessages.map(m => ({ role: m.role === "user" ? "user" : "assistant", content: m.text }));
-      const res = await fetch("/api/critique", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ model: "claude-sonnet-4-6", max_tokens: 400, system: systemPrompt, messages: apiMessages })
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error?.message || `API error ${res.status}`);
-      const reply = (data.content || []).map(b => b.text || "").join("").trim();
-      const updatedMessages = [...newMessages, { role: "ai", text: reply }];
-      setMessages(updatedMessages);
-      await saveConversation(updatedMessages);
-      setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
-    } catch (err) {
-      setMessages(prev => [...prev, { role: "ai", text: `Error: ${err.message}` }]);
-    } finally {
-      setLoading(false);
-    }
-  };
- 
+function AnalysingLoader() {
+  const [msgIndex, setMsgIndex] = useState(0);
+  const messages = [
+    "Simulating user experience...",
+    "Analysing friction points...",
+    "Evaluating clarity and confidence...",
+    "Splitting findings by constraints...",
+    "Almost there..."
+  ];
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setMsgIndex(i => (i + 1) % messages.length);
+    }, 2500);
+    return () => clearInterval(interval);
+  }, []);
   return (
-    <div style={{ borderRadius: 10, overflow: "hidden", border: `1px solid ${sevBorder(finding.severity)}`, background: sevBg(finding.severity) }}>
-      <div style={{ padding: "16px 18px" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
-          <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: sevColor(finding.severity), padding: "2px 8px", borderRadius: 999, background: "#fff", border: `1px solid ${sevBorder(finding.severity)}` }}>{finding.severity}</span>
-          <span style={{ fontSize: 14, fontWeight: 700, color: C.text, flex: 1 }}>{finding.title}</span>
-          {finding.effort && <span style={{ fontSize: 10, fontWeight: 700, color: effortColor(finding.effort), padding: "2px 8px", borderRadius: 999, background: "#fff", border: `1px solid ${effortColor(finding.effort)}33` }}>{finding.effort} effort</span>}
-        </div>
-        <p style={{ margin: "0 0 8px", fontSize: 13, lineHeight: 1.6, color: C.textMed }}>{finding.description}</p>
-        {finding.userImpact && (
-          <div style={{ marginBottom: 8, padding: "6px 10px", borderRadius: 6, background: "rgba(0,0,0,0.04)", border: `1px solid ${C.border}` }}>
-            <span style={{ fontSize: 11, fontWeight: 700, color: C.textMuted, textTransform: "uppercase", letterSpacing: "0.06em" }}>User impact — </span>
-            <span style={{ fontSize: 12, color: C.textMed }}>{finding.userImpact}</span>
-          </div>
-        )}
-        <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-          <span style={{ color: type === "now" ? C.green : C.amber, fontSize: 14, flexShrink: 0 }}>→</span>
-          <p style={{ margin: 0, fontSize: 13, lineHeight: 1.6, color: C.text }}>{finding.recommendation}</p>
-        </div>
-        <button onClick={() => setOpen(o => !o)}
-          style={{ ...btnGhost, padding: "6px 12px", fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}>
-          <span>{open ? "▾" : "▸"}</span>
-          {messages.length > 0 ? `${messages.length} repl${messages.length === 1 ? "y" : "ies"}` : "Discuss this finding"}
-        </button>
-      </div>
-      {open && (
-        <div style={{ borderTop: `1px solid ${C.border}`, background: C.surfaceAlt }}>
-          <div style={{ maxHeight: 280, overflowY: "auto", padding: "14px 18px", display: "flex", flexDirection: "column", gap: 10 }}>
-            {messages.length === 0 && <div style={{ color: C.textMuted, fontSize: 13, fontStyle: "italic", textAlign: "center", padding: "8px 0" }}>Add context, push back, or ask for alternatives.</div>}
-            {messages.map((m, i) => (
-              <div key={i} style={{ display: "flex", gap: 8, flexDirection: m.role === "user" ? "row-reverse" : "row" }}>
-                <div style={{ width: 26, height: 26, borderRadius: "50%", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, background: m.role === "user" ? C.indigoLight : C.surfaceAlt, border: `1px solid ${m.role === "user" ? C.indigoBorder : C.border}`, color: m.role === "user" ? C.indigo : C.textMuted }}>
-                  {m.role === "user" ? "U" : "L"}
-                </div>
-                <div style={{ maxWidth: "80%", padding: "9px 12px", borderRadius: m.role === "user" ? "10px 3px 10px 10px" : "3px 10px 10px 10px", background: m.role === "user" ? C.indigoLight : C.surface, border: `1px solid ${m.role === "user" ? C.indigoBorder : C.border}`, fontSize: 13, lineHeight: 1.6, color: m.role === "user" ? C.indigo : C.text }}>
-                  {m.text}
-                </div>
-              </div>
-            ))}
-            {loading && (
-              <div style={{ display: "flex", gap: 8 }}>
-                <div style={{ width: 26, height: 26, borderRadius: "50%", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, background: C.surfaceAlt, border: `1px solid ${C.border}`, color: C.textMuted }}>L</div>
-                <div style={{ padding: "9px 12px", borderRadius: "3px 10px 10px 10px", background: C.surface, border: `1px solid ${C.border}`, fontSize: 13, color: C.textMuted }}>Thinking...</div>
-              </div>
-            )}
-            <div ref={bottomRef} />
-          </div>
-          <div style={{ padding: "10px 18px 14px", display: "flex", gap: 8 }}>
-            <textarea value={input} onChange={e => setInput(e.target.value)}
-              onKeyDown={e => e.key === "Enter" && !e.shiftKey && (e.preventDefault(), sendMessage())}
-              placeholder="Add context, push back, or ask for an alternative..."
-              rows={2}
-              style={{ ...inputSt, padding: "9px 12px", fontSize: 13, resize: "none", lineHeight: 1.5 }} />
-            <button onClick={sendMessage} disabled={!input.trim() || loading}
-              style={{ ...btnPrimary, padding: "9px 16px", fontSize: 13, opacity: !input.trim() || loading ? 0.4 : 1, flexShrink: 0, alignSelf: "flex-end" }}>
-              Send
-            </button>
-          </div>
-        </div>
-      )}
+    <div style={{ textAlign: "center", padding: "80px 0" }}>
+      <svg width="56" height="56" viewBox="0 0 56 56" style={{ marginBottom: 24 }}>
+        <circle cx="28" cy="28" r="22" fill="none" stroke="#E5E7EB" strokeWidth="4" />
+        <circle cx="28" cy="28" r="22" fill="none" stroke="#1A1A2E" strokeWidth="4"
+          strokeLinecap="round" strokeDasharray="138" strokeDashoffset="138"
+          style={{ animation: "fillUp 2.5s ease-in-out infinite", transformOrigin: "center", transform: "rotate(-90deg)" }}
+        />
+      </svg>
+      <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 8, color: C.text }}>Running simulation...</div>
+      <div style={{ color: C.textMuted, fontSize: 14, minHeight: 20 }}>{messages[msgIndex]}</div>
+      <style>{`@keyframes fillUp{0%{stroke-dashoffset:138;opacity:1}70%{stroke-dashoffset:0;opacity:1}85%{stroke-dashoffset:0;opacity:0}100%{stroke-dashoffset:138;opacity:0}}`}</style>
     </div>
   );
 }
  
-// ── Simulation card ────────────────────────────────────────────────────────
-function SimulationCard({ sim, onView, onDelete }) {
-  const [confirmDelete, setConfirmDelete] = useState(false);
+function SimulationCard({ sim, onView }) {
   const date = new Date(sim.created_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
-  const scoreColor = sim.overall_score >= 7 ? C.green : sim.overall_score >= 5 ? C.amber : C.red;
- 
+  const personaLabel = sim.persona?.length > 30 ? "Custom Persona" : sim.persona;
   return (
-    <div style={{ ...card, cursor: "pointer", transition: "box-shadow 0.15s", position: "relative" }}
+    <div style={{ ...card, cursor: "pointer", transition: "box-shadow 0.15s" }}
       onMouseEnter={e => e.currentTarget.style.boxShadow = "0 2px 12px rgba(0,0,0,0.08)"}
-      onMouseLeave={e => e.currentTarget.style.boxShadow = "none"}>
-      <div onClick={() => onView(sim)} style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
+      onMouseLeave={e => e.currentTarget.style.boxShadow = "none"}
+      onClick={() => onView(sim)}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
         <div style={{ flex: 1 }}>
           <div style={{ fontSize: 15, fontWeight: 700, color: C.text, marginBottom: 8 }}>{sim.name}</div>
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
-            <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 999, background: C.indigoLight, color: C.indigo, border: `1px solid ${C.indigoBorder}` }}>{sim.product_type}</span>
-            <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 999, background: C.surfaceAlt, color: C.textMed, border: `1px solid ${C.border}` }}>{sim.persona}</span>
+            <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 999, background: C.surfaceAlt, color: C.textMed, border: `1px solid ${C.borderMed}` }}>{sim.product_type}</span>
+            <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 999, background: C.surfaceAlt, color: C.textMed, border: `1px solid ${C.borderMed}` }}>{personaLabel}</span>
           </div>
           <p style={{ margin: 0, fontSize: 13, lineHeight: 1.6, color: C.textMed, fontStyle: "italic" }}>"{sim.narrative}"</p>
         </div>
         <div style={{ textAlign: "right", flexShrink: 0 }}>
-          <div style={{ fontSize: 30, fontWeight: 800, color: scoreColor, lineHeight: 1 }}>{sim.overall_score}<span style={{ fontSize: 14, color: C.textMuted }}>/10</span></div>
-          <div style={{ fontSize: 11, color: C.textMuted, marginTop: 4 }}>{date}</div>
+          <div style={{ fontSize: 11, color: C.textMuted }}>{date}</div>
         </div>
       </div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 12 }}>
-        <div style={{ display: "flex", gap: 12 }} onClick={() => onView(sim)}>
-          <span style={{ fontSize: 11, color: C.green, fontWeight: 600 }}>✓ {sim.act_now?.length || 0} to fix</span>
-          <span style={{ fontSize: 11, color: C.amber, fontWeight: 600 }}>⊞ {sim.roadmap?.length || 0} on roadmap</span>
-        </div>
-        {!confirmDelete ? (
-          <button onClick={e => { e.stopPropagation(); setConfirmDelete(true); }}
-            style={{ fontSize: 12, fontWeight: 500, color: C.textMuted, background: "none", border: `1px solid ${C.border}`, cursor: "pointer", padding: "5px 10px", borderRadius: 6, display: "flex", alignItems: "center", gap: 4 }}>
-            🗑 Delete
-          </button>
-        ) : (
-          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-            <span style={{ fontSize: 12, color: C.textMed, fontWeight: 500 }}>Delete this simulation?</span>
-            <button onClick={e => { e.stopPropagation(); onDelete(sim.id); }}
-              style={{ fontSize: 12, fontWeight: 700, color: C.red, background: C.redLight, border: `1px solid ${C.redBorder}`, cursor: "pointer", padding: "4px 12px", borderRadius: 6 }}>
-              Yes, delete
-            </button>
-            <button onClick={e => { e.stopPropagation(); setConfirmDelete(false); }}
-              style={{ fontSize: 12, color: C.textMed, background: "none", border: `1px solid ${C.border}`, cursor: "pointer", padding: "4px 12px", borderRadius: 6 }}>
-              Cancel
-            </button>
-          </div>
-        )}
+      <div style={{ display: "flex", gap: 12, marginTop: 12 }}>
+        <span style={{ fontSize: 11, color: C.green, fontWeight: 600 }}>✓ {sim.act_now?.length || 0} to fix</span>
+        <span style={{ fontSize: 11, color: C.amber, fontWeight: 600 }}>⊞ {sim.roadmap?.length || 0} on roadmap</span>
       </div>
     </div>
   );
 }
  
-// ── Results tabs ───────────────────────────────────────────────────────────
-function ResultTabs({ critique, activeTab, setActiveTab, productType, personaDesc, constraintsSummary, simulationId, pmSummary, simConversations }) {
-  const [copySuccess, setCopySuccess] = useState(false);
-  const tabs = [
-    { id: "now", label: "Act Now", count: critique.actNow?.length || critique.act_now?.length || 0, color: C.green },
-    { id: "roadmap", label: "Roadmap", count: critique.roadmap?.length || 0, color: C.amber },
-    { id: "pm", label: "PM Export", count: null }
-  ];
-  const actNow = critique.actNow || critique.act_now || [];
-  const roadmap = critique.roadmap || [];
-  const pm = pmSummary || critique.pm_summary || "";
- 
-  return (
-    <div>
-      <div style={{ display: "flex", gap: 2, marginBottom: 16, background: C.surfaceAlt, borderRadius: 8, padding: 3 }}>
-        {tabs.map(tab => (
-          <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-            style={{ flex: 1, padding: "9px 8px", borderRadius: 6, border: "none", background: activeTab === tab.id ? C.surface : "transparent", color: activeTab === tab.id ? C.text : C.textMuted, cursor: "pointer", fontSize: 13, fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, boxShadow: activeTab === tab.id ? "0 1px 3px rgba(0,0,0,0.08)" : "none", transition: "all 0.15s" }}>
-            {tab.label}
-            {tab.count !== null && <span style={{ fontSize: 11, padding: "1px 6px", borderRadius: 999, background: activeTab === tab.id ? (tab.color + "18") : C.border, color: activeTab === tab.id ? tab.color : C.textMuted, fontWeight: 700 }}>{tab.count}</span>}
-          </button>
-        ))}
-      </div>
- 
-      {activeTab === "now" && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          <div style={{ fontSize: 12, color: C.textMuted, lineHeight: 1.5, padding: "8px 12px", background: C.surfaceAlt, borderRadius: 6 }}>
-            Click <strong style={{ color: C.textMed }}>Discuss this finding</strong> to push back, add context, or explore alternatives.
-          </div>
-          {actNow.length === 0
-            ? <div style={{ padding: "32px", textAlign: "center", color: C.textMuted, fontSize: 14 }}>No immediate actions — check the Roadmap tab.</div>
-            : actNow.map((fp, i) => <FindingThread key={i} finding={fp} type="now" productType={productType} personaDesc={personaDesc} constraintsSummary={constraintsSummary} simulationId={simulationId} savedMessages={simConversations?.[fp.title] || []} />)}
-        </div>
-      )}
- 
-      {activeTab === "roadmap" && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          <div style={{ fontSize: 12, color: C.textMuted, lineHeight: 1.5, padding: "8px 12px", background: C.amberLight, borderRadius: 6, border: `1px solid ${C.amberBorder}` }}>
-            These findings are valid but outside your current constraints. Share them using <strong style={{ color: C.textMed }}>PM Export</strong>.
-          </div>
-          {roadmap.length === 0
-            ? <div style={{ padding: "32px", textAlign: "center", color: C.textMuted, fontSize: 14 }}>Nothing for the roadmap — everything fits your constraints.</div>
-            : roadmap.map((fp, i) => <FindingThread key={i} finding={fp} type="roadmap" productType={productType} personaDesc={personaDesc} constraintsSummary={constraintsSummary} simulationId={simulationId} savedMessages={simConversations?.[fp.title] || []} />)}
-        </div>
-      )}
- 
-      {activeTab === "pm" && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          <div style={{ fontSize: 12, color: C.textMuted, lineHeight: 1.5, padding: "8px 12px", background: C.indigoLight, borderRadius: 6, border: `1px solid ${C.indigoBorder}` }}>
-            Formatted for your product manager — framed around user impact and business value.
-          </div>
-          <div style={{ background: C.surfaceAlt, borderRadius: 10, padding: "18px", border: `1px solid ${C.border}`, fontFamily: "monospace", fontSize: 12, lineHeight: 1.8, color: C.textMed, whiteSpace: "pre-wrap", maxHeight: 380, overflowY: "auto" }}>
-            {pm}
-          </div>
-          <button onClick={() => { navigator.clipboard.writeText(pm); setCopySuccess(true); setTimeout(() => setCopySuccess(false), 2000); }}
-            style={{ ...btnPrimary, background: copySuccess ? C.green : C.accent }}>
-            {copySuccess ? "✓ Copied!" : "Copy PM Summary"}
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
- 
-// ── Main App ───────────────────────────────────────────────────────────────
 export default function App() {
-  // Auth
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState({ first_name: "", last_name: "" });
+  const [showAuth, setShowAuth] = useState(false);
   const [authView, setAuthView] = useState("login");
   const [authMode, setAuthMode] = useState("auth");
   const [authEmail, setAuthEmail] = useState("");
@@ -361,13 +141,9 @@ export default function App() {
   const [authLoading, setAuthLoading] = useState(false);
   const [authError, setAuthError] = useState(null);
   const [authMessage, setAuthMessage] = useState(null);
-  const [showAuth, setShowAuth] = useState(false);
  
-  // App navigation
-  const [view, setView] = useState("home"); // home | new | result | detail | settings
-  const [step, setStep] = useState("input"); // input | constraints | analysing
- 
-  // Simulation inputs
+  const [view, setView] = useState("home");
+  const [step, setStep] = useState("input");
   const [inputType, setInputType] = useState("figma");
   const [figmaUrl, setFigmaUrl] = useState("");
   const [files, setFiles] = useState([]);
@@ -381,21 +157,20 @@ export default function App() {
   const [scopeLimits, setScopeLimits] = useState([]);
   const [otherConstraints, setOtherConstraints] = useState("");
  
-  // Results
   const [critique, setCritique] = useState(null);
   const [currentSimId, setCurrentSimId] = useState(null);
   const [currentPMSummary, setCurrentPMSummary] = useState("");
-  const [activeTab, setActiveTab] = useState("now");
   const [error, setError] = useState(null);
   const [dragOver, setDragOver] = useState(false);
  
-  // History
   const [simulations, setSimulations] = useState([]);
   const [selectedSim, setSelectedSim] = useState(null);
   const [simConversations, setSimConversations] = useState({});
   const [deleteMessage, setDeleteMessage] = useState(null);
+  const [showDetailMenu, setShowDetailMenu] = useState(false);
+  const [confirmDeleteDetail, setConfirmDeleteDetail] = useState(false);
+  const [detailDrawerOpen, setDetailDrawerOpen] = useState(false);
  
-  // Settings
   const [settingsFirstName, setSettingsFirstName] = useState("");
   const [settingsLastName, setSettingsLastName] = useState("");
   const [settingsEmail, setSettingsEmail] = useState("");
@@ -405,7 +180,6 @@ export default function App() {
  
   const fileInputRef = useRef();
  
-  // ── Auth listener ────────────────────────────────────────────────────────
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null);
@@ -418,12 +192,9 @@ export default function App() {
     return () => subscription.unsubscribe();
   }, []);
  
-  useEffect(() => {
-    if (user) loadSimulations();
-  }, [user]);
+  useEffect(() => { if (user) loadSimulations(); }, [user]);
  
-  // ── Profile ──────────────────────────────────────────────────────────────
-  const loadProfile = async (u) => {
+  const loadProfile = (u) => {
     const meta = u.user_metadata || {};
     setProfile({ first_name: meta.first_name || "", last_name: meta.last_name || "" });
     setSettingsFirstName(meta.first_name || "");
@@ -431,20 +202,13 @@ export default function App() {
     setSettingsEmail(u.email || "");
   };
  
-  const greeting = () => {
-    const name = profile.first_name;
-    return name ? `Hi ${name}` : "Hi there";
-  };
+  const greeting = () => profile.first_name ? `Hi ${profile.first_name}` : "Hi there";
  
-  // ── Auth ─────────────────────────────────────────────────────────────────
   const handleAuth = async (type) => {
     setAuthLoading(true); setAuthError(null); setAuthMessage(null);
     try {
       if (type === "signup") {
-        const { error } = await supabase.auth.signUp({
-          email: authEmail, password: authPassword,
-          options: { data: { first_name: authFirstName } }
-        });
+        const { error } = await supabase.auth.signUp({ email: authEmail, password: authPassword, options: { data: { first_name: authFirstName } } });
         if (error) throw error;
         setAuthMessage("Check your email to confirm your account.");
       } else {
@@ -467,7 +231,6 @@ export default function App() {
  
   const handleSignOut = async () => { await supabase.auth.signOut(); reset(); setShowAuth(false); };
  
-  // ── Settings save ─────────────────────────────────────────────────────────
   const saveSettings = async () => {
     setSettingsSaving(true); setSettingsMessage(null);
     try {
@@ -483,7 +246,6 @@ export default function App() {
     finally { setSettingsSaving(false); }
   };
  
-  // ── Simulations ───────────────────────────────────────────────────────────
   const loadSimulations = async () => {
     if (!user) return;
     const { data } = await supabase.from("simulations").select("*").eq("user_id", user.id).order("created_at", { ascending: false });
@@ -491,11 +253,17 @@ export default function App() {
   };
  
   const loadSimulationDetail = async (sim) => {
-    setSelectedSim(sim); setActiveTab("now");
+    setSelectedSim(sim);
+    setShowDetailMenu(false);
+    setConfirmDeleteDetail(false);
+    setDetailDrawerOpen(false);
     const { data } = await supabase.from("conversations").select("*").eq("simulation_id", sim.id);
     if (data) {
       const convMap = {};
-      data.forEach(c => { convMap[c.finding_title] = c.messages; });
+      data.forEach(c => {
+        convMap[c.finding_title] = c.messages;
+        convMap[c.finding_title + "_resolved"] = c.resolved || false;
+      });
       setSimConversations(convMap);
     }
     setView("detail");
@@ -507,9 +275,9 @@ export default function App() {
     setSimulations(prev => prev.filter(s => s.id !== id));
     setDeleteMessage("Simulation deleted.");
     setTimeout(() => setDeleteMessage(null), 3000);
+    reset();
   };
  
-  // ── File handling ─────────────────────────────────────────────────────────
   const handleFiles = useCallback((newFiles) => {
     const arr = Array.from(newFiles);
     setFiles(prev => [...prev, ...arr].slice(0, inputType === "recording" ? 1 : 8));
@@ -538,7 +306,7 @@ export default function App() {
     const ts = TEAM_SIZES.find(t => t.id === teamSize);
     const tl = TIMELINE_OPTIONS.find(t => t.id === timeline);
     const sl = scopeLimits.map(s => SCOPE_LIMITS.find(o => o.id === s)?.label).filter(Boolean);
-    return `Team: ${ts?.label}. Timeline: ${tl?.label}. Scope limits: ${sl.join(", ")}. ${otherConstraints ? `Other: ${otherConstraints}` : ""}`;
+    return JSON.stringify({ teamSize: ts?.label, timeline: tl?.label, scopeLimits: sl, otherConstraints });
   };
  
   const getPersonaDesc = () => {
@@ -549,14 +317,22 @@ export default function App() {
   const generatePMSummaryFromData = (data, pType, pLabel) => [
     `DESIGN SIMULATION — ${pType?.toUpperCase()}`,
     `Persona Tested: ${pLabel}`,
-    `UX Score: ${data.overallScore}/10`,
+    ``,
+    `DESIGN SIGNALS`,
+    data.signals ? [
+      `Clarity: ${data.signals.clarity?.rating} — ${data.signals.clarity?.explanation}`,
+      `Friction: ${data.signals.friction?.rating} — ${data.signals.friction?.explanation}`,
+      `Confidence: ${data.signals.confidence?.rating} — ${data.signals.confidence?.explanation}`,
+      `Recovery: ${data.signals.recovery?.rating} — ${data.signals.recovery?.explanation}`,
+    ].join("\n") : "Signals not available",
     ``,
     `USER EXPERIENCE SUMMARY`,
     data.narrativeWalkthrough,
     ``,
-    `ROADMAP OPPORTUNITIES (${data.roadmap?.length || 0} items)`,
-    `Issues identified during simulation that fall outside current sprint constraints.`,
+    `PRIORITY FOCUS`,
+    data.priorityFocus,
     ``,
+    `ROADMAP OPPORTUNITIES (${data.roadmap?.length || 0} items)`,
     ...(data.roadmap || []).map((item, i) => [
       `${i + 1}. ${item.title} [${item.severity?.toUpperCase()}]`,
       `User Impact: ${item.userImpact}`,
@@ -570,24 +346,23 @@ export default function App() {
     `Generated by Lens — AI User Simulation Tool`
   ].join("\n");
  
-  // ── Run simulation ────────────────────────────────────────────────────────
   const analyse = async () => {
     setStep("analysing"); setError(null);
     try {
       const personaDesc = getPersonaDesc();
-      const inputDesc = inputType === "figma" ? `Figma URL: ${figmaUrl}` : inputType === "screenshots" ? `${files.length} screenshot(s)` : "Screen recording";
+      const inputDesc = inputType === "figma" ? `Prototype URL: ${figmaUrl}` : inputType === "screenshots" ? `${files.length} screenshot(s)` : "Screen recording";
       const constraintsSummary = buildConstraintsSummary();
       const persona = PERSONAS.find(p => p.id === selectedPersona);
       const personaLabel = selectedPersona === "custom" ? customPersona.slice(0, 30) : persona?.label;
  
-      const userMessage = `UX design critic. Respond ONLY with raw JSON, no markdown. Keep ALL string values under 25 words.
+      const userMessage = `You are an expert UX design critic. Respond ONLY with raw JSON, no markdown.
  
 Product: ${productType} | Input: ${inputDesc} | Persona: ${personaDesc} | Context: ${context || "none"}
 Constraints: ${constraintsSummary}
-${inputType === "figma" ? "No visuals — use common UX patterns for this product/persona." : "Analyse the visuals."}
+${inputType === "figma" ? "No visuals — use common UX patterns for this product type and persona." : "Analyse the visuals carefully."}
  
-Max 3 actNow items, max 3 roadmap items. Raw JSON only:
-{"narrativeWalkthrough":"1-2 sentences as persona","overallScore":7,"actNow":[{"severity":"high","title":"title","description":"one sentence","recommendation":"one sentence","effort":"low"}],"roadmap":[{"severity":"high","title":"title","description":"one sentence","recommendation":"one sentence","userImpact":"one sentence","pmNote":"one sentence"}],"strengths":["one sentence"],"priorityFocus":"one sentence"}`;
+Return this exact JSON (max 3 actNow, max 3 roadmap, all strings under 25 words):
+{"narrativeWalkthrough":"2-3 sentences in first person as the persona","signals":{"clarity":{"rating":"Good|Needs Attention|Critical","explanation":"one sentence on clarity"},"friction":{"rating":"Good|Needs Attention|Critical","explanation":"one sentence — Good means smooth, Critical means high friction"},"confidence":{"rating":"Good|Needs Attention|Critical","explanation":"one sentence on user confidence"},"recovery":{"rating":"Good|Needs Attention|Critical","explanation":"one sentence on error recovery"}},"priorityFocus":"one sentence on the single most impactful change","actNow":[{"severity":"critical|high|medium|low","title":"short title","description":"one sentence","recommendation":"one sentence","effort":"low|medium|high"}],"roadmap":[{"severity":"critical|high|medium|low","title":"short title","description":"one sentence","recommendation":"one sentence","userImpact":"one sentence","pmNote":"one sentence"}],"strengths":["one sentence"]}`;
  
       const content = [];
       if (inputType === "screenshots" && files.length > 0) {
@@ -624,7 +399,7 @@ Max 3 actNow items, max 3 roadmap items. Raw JSON only:
         }
         const fragment = end !== -1 ? jsonText.slice(start, end + 1) : jsonText.slice(start);
         try { parsed = JSON.parse(fragment); }
-        catch { parsed = { narrativeWalkthrough: "Response too long — please try again.", overallScore: 0, actNow: [], roadmap: [], strengths: [], priorityFocus: "Please retry." }; }
+        catch { parsed = { narrativeWalkthrough: "Response too long — please try again.", signals: {}, actNow: [], roadmap: [], strengths: [], priorityFocus: "Please retry." }; }
       }
  
       const pmSummary = generatePMSummaryFromData(parsed, productType, personaLabel);
@@ -637,23 +412,19 @@ Max 3 actNow items, max 3 roadmap items. Raw JSON only:
         input_type: inputType,
         persona: personaLabel,
         context: context || null,
-        constraints: { teamSize, timeline, scopeLimits, otherConstraints },
-        overall_score: parsed.overallScore,
+        constraints: constraintsSummary,
         narrative: parsed.narrativeWalkthrough,
         priority_focus: parsed.priorityFocus,
         act_now: parsed.actNow,
         roadmap: parsed.roadmap,
         strengths: parsed.strengths,
+        signals: parsed.signals,
         pm_summary: pmSummary
       }).select().single();
  
-      if (simData) {
-        setCurrentSimId(simData.id);
-        setSimulations(prev => [simData, ...prev]);
-      }
+      if (simData) { setCurrentSimId(simData.id); setSimulations(prev => [simData, ...prev]); }
       setCurrentPMSummary(pmSummary);
       setCritique(parsed);
-      setActiveTab("now");
       setView("result");
       setStep("input");
     } catch (err) {
@@ -668,30 +439,22 @@ Max 3 actNow items, max 3 roadmap items. Raw JSON only:
     setProductType(""); setContext(""); setError(null); setSimName("");
     setTeamSize(null); setTimeline(null); setScopeLimits([]); setOtherConstraints("");
     setCurrentSimId(null); setStep("input"); setCurrentPMSummary("");
+    setShowDetailMenu(false); setConfirmDeleteDetail(false); setDetailDrawerOpen(false);
   };
  
   const personaDesc = selectedPersona ? getPersonaDesc() : "";
-  const constraintsSummary = teamSize ? buildConstraintsSummary() : "";
- 
-  // ── Initials avatar ───────────────────────────────────────────────────────
+  const constraintsSummary = teamSize ? buildConstraintsSummary() : "{}";
   const initials = profile.first_name
     ? `${profile.first_name[0]}${profile.last_name?.[0] || ""}`.toUpperCase()
     : user?.email?.[0]?.toUpperCase() || "U";
  
-  // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div style={{ minHeight: "100vh", background: C.bg, color: C.text, fontFamily: "'DM Sans', 'Helvetica Neue', sans-serif" }}>
-      <style>{`
-        * { box-sizing: border-box; }
-        input:focus, textarea:focus { border-color: ${C.indigo} !important; }
-        button:hover { opacity: 0.9; }
-        @keyframes spin { 0%{transform:rotate(0deg)} 100%{transform:rotate(360deg)} }
-      `}</style>
+      <style>{`* { box-sizing: border-box; } input:focus, textarea:focus { border-color: ${C.indigo} !important; }`}</style>
  
-      {/* ── LANDING + AUTH ── */}
+      {/* LANDING + AUTH */}
       {!user && (
         <div style={{ minHeight: "100vh", background: C.bg }}>
-          {/* Nav */}
           <div style={{ maxWidth: 960, margin: "0 auto", padding: "20px 24px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <div style={{ display: "inline-flex", alignItems: "center", gap: 8, cursor: "pointer" }} onClick={() => { setShowAuth(false); setAuthError(null); setAuthMessage(null); }}>
               <div style={{ width: 28, height: 28, borderRadius: 6, background: C.accent, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -699,31 +462,18 @@ Max 3 actNow items, max 3 roadmap items. Raw JSON only:
               </div>
               <span style={{ fontSize: 16, fontWeight: 800, color: C.text, letterSpacing: "-0.02em" }}>Lens</span>
             </div>
-            <button onClick={() => { setAuthView("login"); setShowAuth(true); }}
-              style={{ ...btnGhost, padding: "8px 18px" }}>Log In</button>
+            <button onClick={() => { setAuthView("login"); setShowAuth(true); }} style={{ ...btnGhost, padding: "8px 18px" }}>Log In</button>
           </div>
  
           {!showAuth ? (
             <>
-              {/* Hero */}
               <div style={{ maxWidth: 720, margin: "0 auto", padding: "80px 24px 60px", textAlign: "center" }}>
-                <div style={{ display: "inline-block", padding: "4px 12px", borderRadius: 999, background: C.indigoLight, border: `1px solid ${C.indigoBorder}`, color: C.indigo, fontSize: 12, fontWeight: 600, marginBottom: 24, letterSpacing: "0.04em", textTransform: "uppercase" }}>
-                  AI User Simulation
-                </div>
-                <h1 style={{ fontSize: "clamp(32px, 6vw, 56px)", fontWeight: 900, lineHeight: 1.1, margin: "0 0 20px", color: C.text, letterSpacing: "-0.03em" }}>
-                  Test your designs before your users do
-                </h1>
-                <p style={{ fontSize: "clamp(16px, 2.5vw, 20px)", color: C.textMed, lineHeight: 1.6, margin: "0 0 40px", maxWidth: 540, marginLeft: "auto", marginRight: "auto" }}>
-                  Simulate how real users experience your designs and surface problems early.
-                </p>
-                <button onClick={() => { setAuthView("signup"); setShowAuth(true); }}
-                  style={{ ...btnPrimary, padding: "14px 32px", fontSize: 15 }}>
-                  Get Started
-                </button>
+                <div style={{ display: "inline-block", padding: "4px 12px", borderRadius: 999, background: C.indigoLight, border: `1px solid ${C.indigoBorder}`, color: C.indigo, fontSize: 12, fontWeight: 600, marginBottom: 24, letterSpacing: "0.04em", textTransform: "uppercase" }}>AI User Simulation</div>
+                <h1 style={{ fontSize: "clamp(32px, 6vw, 56px)", fontWeight: 900, lineHeight: 1.1, margin: "0 0 20px", color: C.text, letterSpacing: "-0.03em" }}>Test your designs before your users do</h1>
+                <p style={{ fontSize: "clamp(16px, 2.5vw, 20px)", color: C.textMed, lineHeight: 1.6, margin: "0 0 40px", maxWidth: 540, marginLeft: "auto", marginRight: "auto" }}>Simulate how real users experience your designs and surface problems early.</p>
+                <button onClick={() => { setAuthView("signup"); setShowAuth(true); }} style={{ ...btnPrimary, padding: "14px 32px", fontSize: 15 }}>Get Started</button>
                 <div style={{ marginTop: 12, fontSize: 12, color: C.textMuted }}>Free to use. No credit card required.</div>
               </div>
- 
-              {/* How it works */}
               <div style={{ maxWidth: 960, margin: "0 auto", padding: "0 24px 80px" }}>
                 <div style={{ textAlign: "center", marginBottom: 40 }}>
                   <h2 style={{ fontSize: 24, fontWeight: 800, color: C.text, margin: "0 0 8px", letterSpacing: "-0.02em" }}>How it works</h2>
@@ -731,7 +481,7 @@ Max 3 actNow items, max 3 roadmap items. Raw JSON only:
                 </div>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 16 }}>
                   {[
-                    { step: "01", title: "Upload your design", desc: "Share a Figma link, screenshots, or a screen recording of your flow." },
+                    { step: "01", title: "Upload your design", desc: "Share a prototype link, screenshots, or a screen recording of your flow." },
                     { step: "02", title: "Choose a user persona", desc: "Pick from research-backed personas or define your own target user." },
                     { step: "03", title: "Get actionable feedback", desc: "Receive findings split into what you can fix now and what goes on the roadmap." }
                   ].map(item => (
@@ -743,84 +493,61 @@ Max 3 actNow items, max 3 roadmap items. Raw JSON only:
                   ))}
                 </div>
               </div>
- 
-              {/* CTA strip */}
               <div style={{ background: C.accent, padding: "56px 24px", textAlign: "center" }}>
-                <h2 style={{ fontSize: "clamp(22px, 4vw, 32px)", fontWeight: 800, color: "#fff", margin: "0 0 12px", letterSpacing: "-0.02em" }}>
-                  Start simulating today
-                </h2>
-                <p style={{ fontSize: 15, color: "rgba(255,255,255,0.7)", margin: "0 0 28px" }}>
-                  Built for designers who want better feedback, faster.
-                </p>
-                <button onClick={() => { setAuthView("signup"); setShowAuth(true); }}
-                  style={{ padding: "14px 32px", borderRadius: 8, border: "none", background: "#fff", color: C.accent, fontSize: 15, fontWeight: 700, cursor: "pointer" }}>
-                  Create Free Account
-                </button>
+                <h2 style={{ fontSize: "clamp(22px, 4vw, 32px)", fontWeight: 800, color: "#fff", margin: "0 0 12px", letterSpacing: "-0.02em" }}>Start simulating today</h2>
+                <p style={{ fontSize: 15, color: "rgba(255,255,255,0.7)", margin: "0 0 28px" }}>Built for designers who want better feedback, faster.</p>
+                <button onClick={() => { setAuthView("signup"); setShowAuth(true); }} style={{ padding: "14px 32px", borderRadius: 8, border: "none", background: "#fff", color: C.accent, fontSize: 15, fontWeight: 700, cursor: "pointer" }}>Create Free Account</button>
               </div>
             </>
           ) : (
             <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: "40px 24px" }}>
               <div style={{ width: "100%", maxWidth: 400 }}>
                 <div style={{ ...card, padding: "28px 32px" }}>
-              {authMode === "forgot" ? (
-                <>
-                  <h2 style={{ fontSize: 18, fontWeight: 700, margin: "0 0 6px", color: C.text }}>Reset password</h2>
-                  <p style={{ fontSize: 13, color: C.textMuted, margin: "0 0 20px" }}>We'll send a reset link to your email.</p>
-                  {authMessage && <div style={{ padding: "10px 14px", borderRadius: 8, background: C.greenLight, border: `1px solid ${C.greenBorder}`, color: C.green, fontSize: 13, marginBottom: 16 }}>{authMessage}</div>}
-                  {authError && <div style={{ padding: "10px 14px", borderRadius: 8, background: C.redLight, border: `1px solid ${C.redBorder}`, color: C.red, fontSize: 13, marginBottom: 16 }}>{authError}</div>}
-                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                    <input value={authEmail} onChange={e => setAuthEmail(e.target.value)} placeholder="Email address" type="email" style={inputSt} />
-                    <button onClick={handleForgotPassword} disabled={authLoading || !authEmail} style={{ ...btnPrimary, opacity: authLoading || !authEmail ? 0.5 : 1 }}>
-                      {authLoading ? "Sending..." : "Send Reset Link"}
-                    </button>
-                    <button onClick={() => { setAuthMode("auth"); setAuthError(null); setAuthMessage(null); }} style={{ ...btnGhost, textAlign: "center" }}>← Back to Log In</button>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div style={{ display: "flex", gap: 2, marginBottom: 24, background: C.surfaceAlt, borderRadius: 8, padding: 3 }}>
-                    {["login", "signup"].map(v => (
-                      <button key={v} onClick={() => { setAuthView(v); setAuthError(null); setAuthMessage(null); }}
-                        style={{ flex: 1, padding: "9px", borderRadius: 6, border: "none", background: authView === v ? C.surface : "transparent", color: authView === v ? C.text : C.textMuted, cursor: "pointer", fontSize: 13, fontWeight: 600, boxShadow: authView === v ? "0 1px 3px rgba(0,0,0,0.08)" : "none", transition: "all 0.15s" }}>
-                        {v === "login" ? "Log In" : "Sign Up"}
-                      </button>
-                    ))}
-                  </div>
-                  {authMessage && <div style={{ padding: "10px 14px", borderRadius: 8, background: C.greenLight, border: `1px solid ${C.greenBorder}`, color: C.green, fontSize: 13, marginBottom: 16 }}>{authMessage}</div>}
-                  {authError && <div style={{ padding: "10px 14px", borderRadius: 8, background: C.redLight, border: `1px solid ${C.redBorder}`, color: C.red, fontSize: 13, marginBottom: 16 }}>{authError}</div>}
-                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                    {authView === "signup" && (
-                      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                        <input value={authFirstName} onChange={e => setAuthFirstName(e.target.value)} placeholder="What should we call you? (optional)" style={inputSt} />
+                  {authMode === "forgot" ? (
+                    <>
+                      <h2 style={{ fontSize: 18, fontWeight: 700, margin: "0 0 6px" }}>Reset password</h2>
+                      <p style={{ fontSize: 13, color: C.textMuted, margin: "0 0 20px" }}>We'll send a reset link to your email.</p>
+                      {authMessage && <div style={{ padding: "10px 14px", borderRadius: 8, background: C.greenLight, border: `1px solid ${C.greenBorder}`, color: C.green, fontSize: 13, marginBottom: 16 }}>{authMessage}</div>}
+                      {authError && <div style={{ padding: "10px 14px", borderRadius: 8, background: C.redLight, border: `1px solid ${C.redBorder}`, color: C.red, fontSize: 13, marginBottom: 16 }}>{authError}</div>}
+                      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                        <input value={authEmail} onChange={e => setAuthEmail(e.target.value)} placeholder="Email address" type="email" style={inputSt} />
+                        <button onClick={handleForgotPassword} disabled={authLoading || !authEmail} style={{ ...btnPrimary, opacity: authLoading || !authEmail ? 0.5 : 1 }}>{authLoading ? "Sending..." : "Send Reset Link"}</button>
+                        <button onClick={() => { setAuthMode("auth"); setAuthError(null); setAuthMessage(null); }} style={{ ...btnGhost, textAlign: "center" }}>← Back to Log In</button>
                       </div>
-                    )}
-                    <input value={authEmail} onChange={e => setAuthEmail(e.target.value)} placeholder="Email address" type="email" style={inputSt} />
-                    <input value={authPassword} onChange={e => setAuthPassword(e.target.value)} placeholder="Password" type="password" style={inputSt} />
-                    <button onClick={() => handleAuth(authView)} disabled={authLoading || !authEmail || !authPassword}
-                      style={{ ...btnPrimary, opacity: authLoading || !authEmail || !authPassword ? 0.5 : 1 }}>
-                      {authLoading ? "Please wait..." : authView === "login" ? "Log In" : "Create Account"}
-                    </button>
-                    {authView === "login" && (
-                      <button onClick={() => { setAuthMode("forgot"); setAuthError(null); setAuthMessage(null); }}
-                        style={{ background: "none", border: "none", color: C.textMuted, fontSize: 12, cursor: "pointer", textAlign: "center", padding: "4px" }}>
-                        Forgot password?
-                      </button>
-                    )}
-                  </div>
-                </>
-              )}
-            </div>
+                    </>
+                  ) : (
+                    <>
+                      <div style={{ display: "flex", gap: 2, marginBottom: 24, background: C.surfaceAlt, borderRadius: 8, padding: 3 }}>
+                        {["login", "signup"].map(v => (
+                          <button key={v} onClick={() => { setAuthView(v); setAuthError(null); setAuthMessage(null); }}
+                            style={{ flex: 1, padding: "9px", borderRadius: 6, border: "none", background: authView === v ? C.surface : "transparent", color: authView === v ? C.text : C.textMuted, cursor: "pointer", fontSize: 13, fontWeight: 600, boxShadow: authView === v ? "0 1px 3px rgba(0,0,0,0.08)" : "none" }}>
+                            {v === "login" ? "Log In" : "Sign Up"}
+                          </button>
+                        ))}
+                      </div>
+                      {authMessage && <div style={{ padding: "10px 14px", borderRadius: 8, background: C.greenLight, border: `1px solid ${C.greenBorder}`, color: C.green, fontSize: 13, marginBottom: 16 }}>{authMessage}</div>}
+                      {authError && <div style={{ padding: "10px 14px", borderRadius: 8, background: C.redLight, border: `1px solid ${C.redBorder}`, color: C.red, fontSize: 13, marginBottom: 16 }}>{authError}</div>}
+                      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                        {authView === "signup" && <input value={authFirstName} onChange={e => setAuthFirstName(e.target.value)} placeholder="What should we call you? (optional)" style={inputSt} />}
+                        <input value={authEmail} onChange={e => setAuthEmail(e.target.value)} placeholder="Email address" type="email" style={inputSt} />
+                        <input value={authPassword} onChange={e => setAuthPassword(e.target.value)} placeholder="Password" type="password" style={inputSt} />
+                        <button onClick={() => handleAuth(authView)} disabled={authLoading || !authEmail || !authPassword} style={{ ...btnPrimary, opacity: authLoading || !authEmail || !authPassword ? 0.5 : 1 }}>
+                          {authLoading ? "Please wait..." : authView === "login" ? "Log In" : "Create Account"}
+                        </button>
+                        {authView === "login" && <button onClick={() => { setAuthMode("forgot"); setAuthError(null); setAuthMessage(null); }} style={{ background: "none", border: "none", color: C.textMuted, fontSize: 12, cursor: "pointer", textAlign: "center", padding: "4px" }}>Forgot password?</button>}
+                      </div>
+                    </>
+                  )}
+                </div>
               </div>
             </div>
           )}
         </div>
       )}
  
-      {/* ── MAIN APP ── */}
+      {/* MAIN APP */}
       {user && (
-        <div style={{ maxWidth: 800, margin: "0 auto", padding: "0 24px 60px" }}>
- 
-          {/* Nav */}
+        <div style={{ maxWidth: 900, margin: "0 auto", padding: "0 24px 60px" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "20px 0 32px", borderBottom: `1px solid ${C.border}`, marginBottom: 36 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }} onClick={reset}>
               <div style={{ width: 28, height: 28, borderRadius: 6, background: C.accent, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -828,61 +555,51 @@ Max 3 actNow items, max 3 roadmap items. Raw JSON only:
               </div>
               <span style={{ fontSize: 16, fontWeight: 800, color: C.text, letterSpacing: "-0.02em" }}>Lens</span>
             </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <button onClick={() => { setView("settings"); setSettingsMessage(null); }} style={{ width: 34, height: 34, borderRadius: "50%", background: C.accent, border: "none", color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                {initials}
-              </button>
-            </div>
+            <button onClick={() => { setView("settings"); setSettingsMessage(null); }} style={{ width: 34, height: 34, borderRadius: "50%", background: C.accent, border: "none", color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              {initials}
+            </button>
           </div>
  
-          {/* ── HOME / DASHBOARD ── */}
+          {/* HOME */}
           {view === "home" && (
             <div style={{ display: "flex", flexDirection: "column", gap: 32 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 16 }}>
                 <div>
                   <h1 style={{ fontSize: "clamp(24px,4vw,34px)", fontWeight: 800, margin: "0 0 6px", color: C.text, letterSpacing: "-0.02em" }}>{greeting()} 👋</h1>
                   <p style={{ fontSize: 15, color: C.textMuted, margin: 0 }}>
-                    {simulations.length === 0
-                      ? "Run your first simulation to get started."
-                      : `You've run ${simulations.length} simulation${simulations.length === 1 ? "" : "s"} so far.`}
+                    {simulations.length === 0 ? "Run your first simulation to get started." : `You've run ${simulations.length} simulation${simulations.length === 1 ? "" : "s"} so far.`}
                   </p>
                 </div>
-                <button onClick={() => setView("new")} style={{ ...btnPrimary, padding: "12px 20px", whiteSpace: "nowrap" }}>
-                  + Run a Simulation
-                </button>
+                <button onClick={() => setView("new")} style={{ ...btnPrimary, padding: "12px 20px", whiteSpace: "nowrap" }}>+ Run a Simulation</button>
               </div>
  
               {deleteMessage && (
-                <div style={{ padding: "12px 16px", borderRadius: 8, background: "#F0FDF4", border: `1px solid #BBF7D0`, color: "#166534", fontSize: 13, fontWeight: 500, display: "flex", alignItems: "center", gap: 8 }}>
+                <div style={{ padding: "12px 16px", borderRadius: 8, background: "#F0FDF4", border: "1px solid #BBF7D0", color: "#166534", fontSize: 13, fontWeight: 500, display: "flex", alignItems: "center", gap: 8 }}>
                   <span style={{ fontWeight: 700 }}>✓</span> {deleteMessage}
                 </div>
               )}
  
               {simulations.length > 0 && (
                 <div>
-                  <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: C.textMuted, marginBottom: 14 }}>
-                    Recent Simulations
-                  </div>
+                  <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: C.textMuted, marginBottom: 14 }}>Recent Simulations</div>
                   <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                    {simulations.map(sim => (
-                      <SimulationCard key={sim.id} sim={sim} onView={loadSimulationDetail} onDelete={deleteSimulation} />
-                    ))}
+                    {simulations.map(sim => <SimulationCard key={sim.id} sim={sim} onView={loadSimulationDetail} />)}
                   </div>
                 </div>
               )}
  
               {simulations.length === 0 && (
-                <div style={{ ...card, textAlign: "center", padding: "48px 32px", background: C.surfaceAlt, border: `1px dashed ${C.borderMed}` }}>
+                <div style={{ ...card, textAlign: "center", padding: "48px 32px", background: C.surfaceAlt, border: `1px dashed rgba(0,0,0,0.12)` }}>
                   <div style={{ fontSize: 32, marginBottom: 12 }}>◎</div>
                   <div style={{ fontSize: 15, fontWeight: 600, color: C.textMed, marginBottom: 6 }}>No simulations yet</div>
                   <div style={{ fontSize: 13, color: C.textMuted, marginBottom: 20 }}>Upload a design and simulate how real users experience it.</div>
-                  <button onClick={() => setView("new")} style={btnPrimary}>Run your first simulation →</button>
+                  <button onClick={() => setView("new")} style={btnPrimary}>Run your first simulation</button>
                 </div>
               )}
             </div>
           )}
  
-          {/* ── NEW SIMULATION ── */}
+          {/* NEW SIMULATION — STEP 1 */}
           {view === "new" && step === "input" && (
             <div style={{ display: "flex", flexDirection: "column", gap: 40 }}>
               <div>
@@ -890,39 +607,33 @@ Max 3 actNow items, max 3 roadmap items. Raw JSON only:
                 <h2 style={{ fontSize: 22, fontWeight: 800, margin: "0 0 4px", color: C.text, letterSpacing: "-0.02em" }}>New Simulation</h2>
                 <p style={{ fontSize: 14, color: C.textMuted, margin: 0 }}>Simulate how a real user experiences your design.</p>
               </div>
- 
-              {/* Progress */}
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                {["Design", "Constraints", "Simulate"].map((s, i) => {
-                  const active = i === 0; const done = false;
-                  return (
-                    <div key={s} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                        <div style={{ width: 20, height: 20, borderRadius: "50%", background: active ? C.accent : C.surfaceAlt, border: `1.5px solid ${active ? C.accent : C.border}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, color: active ? "#fff" : C.textMuted, fontWeight: 700 }}>{i + 1}</div>
-                        <span style={{ fontSize: 12, color: active ? C.text : C.textMuted, fontWeight: active ? 600 : 400 }}>{s}</span>
-                      </div>
-                      {i < 2 && <div style={{ width: 20, height: 1, background: C.border }} />}
+                {["Design", "Constraints", "Simulate"].map((s, i) => (
+                  <div key={s} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <div style={{ width: 20, height: 20, borderRadius: "50%", background: i === 0 ? C.accent : C.surfaceAlt, border: `1.5px solid ${i === 0 ? C.accent : C.border}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, color: i === 0 ? "#fff" : C.textMuted, fontWeight: 700 }}>{i + 1}</div>
+                      <span style={{ fontSize: 12, color: i === 0 ? C.text : C.textMuted, fontWeight: i === 0 ? 600 : 400 }}>{s}</span>
                     </div>
-                  );
-                })}
+                    {i < 2 && <div style={{ width: 20, height: 1, background: C.border }} />}
+                  </div>
+                ))}
               </div>
- 
               <Section label="01 — What are you analysing?">
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8 }}>
-                  {[{ id: "figma", icon: "◈", label: "Figma Link" }, { id: "screenshots", icon: "⊞", label: "Screenshots" }, { id: "recording", icon: "◉", label: "Screen Recording" }].map(opt => (
+                  {[{ id: "figma", icon: "◈", label: "Prototype Link" }, { id: "screenshots", icon: "⊞", label: "Screenshots" }, { id: "recording", icon: "◉", label: "Screen Recording" }].map(opt => (
                     <button key={opt.id} onClick={() => { setInputType(opt.id); setFiles([]); }}
-                      style={{ padding: "14px 10px", borderRadius: 8, border: `1.5px solid ${inputType === opt.id ? C.indigo : C.border}`, background: inputType === opt.id ? C.indigoLight : C.surface, color: inputType === opt.id ? C.indigo : C.textMuted, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 6, fontSize: 20, transition: "all 0.15s" }}>
+                      style={{ padding: "14px 10px", borderRadius: 8, border: `1.5px solid ${inputType === opt.id ? C.indigo : C.border}`, background: inputType === opt.id ? C.indigoLight : C.surface, color: inputType === opt.id ? C.indigo : C.textMuted, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 6, fontSize: 20 }}>
                       <span>{opt.icon}</span>
                       <span style={{ fontSize: 11, fontWeight: 600 }}>{opt.label}</span>
                     </button>
                   ))}
                 </div>
-                {inputType === "figma" && <input value={figmaUrl} onChange={e => setFigmaUrl(e.target.value)} placeholder="https://www.figma.com/proto/..." style={inputSt} />}
+                {inputType === "figma" && <input value={figmaUrl} onChange={e => setFigmaUrl(e.target.value)} placeholder="Paste your prototype link here..." style={inputSt} />}
                 {(inputType === "screenshots" || inputType === "recording") && (
                   <div onDragOver={e => { e.preventDefault(); setDragOver(true); }} onDragLeave={() => setDragOver(false)}
                     onDrop={e => { e.preventDefault(); setDragOver(false); handleFiles(e.dataTransfer.files); }}
                     onClick={() => fileInputRef.current?.click()}
-                    style={{ border: `1.5px dashed ${dragOver ? C.indigo : C.borderMed}`, borderRadius: 8, padding: "28px 20px", textAlign: "center", cursor: "pointer", background: dragOver ? C.indigoLight : C.surfaceAlt, transition: "all 0.15s" }}>
+                    style={{ border: `1.5px dashed ${dragOver ? C.indigo : "rgba(0,0,0,0.12)"}`, borderRadius: 8, padding: "28px 20px", textAlign: "center", cursor: "pointer", background: dragOver ? C.indigoLight : C.surfaceAlt }}>
                     <div style={{ fontSize: 24, marginBottom: 6 }}>{inputType === "recording" ? "🎬" : "🖼️"}</div>
                     <div style={{ color: C.textMuted, fontSize: 13 }}>{inputType === "recording" ? "Drop your screen recording (MP4, MOV)" : "Drop screenshots here or click to browse"}</div>
                     {files.length > 0 && <div style={{ marginTop: 8, color: C.indigo, fontSize: 13, fontWeight: 600 }}>{files.length} file{files.length > 1 ? "s" : ""} ready ✓</div>}
@@ -930,18 +641,16 @@ Max 3 actNow items, max 3 roadmap items. Raw JSON only:
                   </div>
                 )}
               </Section>
- 
               <Section label="02 — Product type">
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                   {PRODUCT_TYPES.map(pt => <button key={pt} onClick={() => setProductType(pt)} style={chipSt(productType === pt)}>{pt}</button>)}
                 </div>
               </Section>
- 
               <Section label="03 — Who is your user?">
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 8 }}>
                   {PERSONAS.map(p => (
                     <button key={p.id} onClick={() => setSelectedPersona(p.id)}
-                      style={{ padding: "12px 14px", borderRadius: 8, border: `1.5px solid ${selectedPersona === p.id ? C.indigo : C.border}`, background: selectedPersona === p.id ? C.indigoLight : C.surface, color: selectedPersona === p.id ? C.text : C.textMed, cursor: "pointer", textAlign: "left", transition: "all 0.15s" }}>
+                      style={{ padding: "12px 14px", borderRadius: 8, border: `1.5px solid ${selectedPersona === p.id ? C.indigo : C.border}`, background: selectedPersona === p.id ? C.indigoLight : C.surface, color: selectedPersona === p.id ? C.text : C.textMed, cursor: "pointer", textAlign: "left" }}>
                       <div style={{ fontSize: 18, marginBottom: 4 }}>{p.emoji}</div>
                       <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 2 }}>{p.label}</div>
                       <div style={{ fontSize: 11, lineHeight: 1.4, color: C.textMuted }}>{p.description}</div>
@@ -950,23 +659,19 @@ Max 3 actNow items, max 3 roadmap items. Raw JSON only:
                 </div>
                 {selectedPersona === "custom" && <textarea value={customPersona} onChange={e => setCustomPersona(e.target.value)} placeholder="Describe your user: goals, tech comfort, context..." rows={3} style={{ ...inputSt, resize: "vertical" }} />}
               </Section>
- 
               <Section label="04 — Additional context (optional)">
                 <textarea value={context} onChange={e => setContext(e.target.value)} placeholder="e.g. Checkout flow for a fashion app targeting 25–40 year olds." rows={3} style={{ ...inputSt, resize: "vertical" }} />
               </Section>
- 
               <Section label="05 — Simulation name (optional)" sublabel="Leave blank to auto-generate from product type, persona and date">
-                <input value={simName} onChange={e => setSimName(e.target.value)} placeholder="e.g. Anchor — Checkout Flow v2" style={inputSt} />
+                <input value={simName} onChange={e => setSimName(e.target.value)} placeholder="e.g. Checkout Flow — Mobile, v2" style={inputSt} />
               </Section>
- 
-              <button disabled={!canProceedToConstraints()} onClick={() => setStep("constraints")}
-                style={{ ...btnPrimary, opacity: canProceedToConstraints() ? 1 : 0.4 }}>
-                Next — Set Constraints →
+              <button disabled={!canProceedToConstraints()} onClick={() => setStep("constraints")} style={{ ...btnPrimary, width: "100%", opacity: canProceedToConstraints() ? 1 : 0.4 }}>
+                Next — Set Constraints
               </button>
             </div>
           )}
  
-          {/* ── CONSTRAINTS ── */}
+          {/* CONSTRAINTS */}
           {view === "new" && step === "constraints" && (
             <div style={{ display: "flex", flexDirection: "column", gap: 40 }}>
               <div>
@@ -974,8 +679,6 @@ Max 3 actNow items, max 3 roadmap items. Raw JSON only:
                 <h2 style={{ fontSize: 22, fontWeight: 800, margin: "0 0 4px", color: C.text, letterSpacing: "-0.02em" }}>Set Constraints</h2>
                 <p style={{ fontSize: 14, color: C.textMuted, margin: 0 }}>The simulation will split findings into what you can fix now vs what goes on the roadmap.</p>
               </div>
- 
-              {/* Progress */}
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 {["Design", "Constraints", "Simulate"].map((s, i) => {
                   const active = i === 1; const done = i === 0;
@@ -990,153 +693,152 @@ Max 3 actNow items, max 3 roadmap items. Raw JSON only:
                   );
                 })}
               </div>
- 
               <Section label="01 — Team size">
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 8 }}>
                   {TEAM_SIZES.map(t => (
                     <button key={t.id} onClick={() => setTeamSize(t.id)}
-                      style={{ padding: "12px 8px", borderRadius: 8, border: `1.5px solid ${teamSize === t.id ? C.indigo : C.border}`, background: teamSize === t.id ? C.indigoLight : C.surface, color: teamSize === t.id ? C.text : C.textMed, cursor: "pointer", textAlign: "center", transition: "all 0.15s" }}>
+                      style={{ padding: "12px 8px", borderRadius: 8, border: `1.5px solid ${teamSize === t.id ? C.indigo : C.border}`, background: teamSize === t.id ? C.indigoLight : C.surface, color: teamSize === t.id ? C.text : C.textMed, cursor: "pointer", textAlign: "center" }}>
                       <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 2 }}>{t.label}</div>
                       <div style={{ fontSize: 11, color: C.textMuted }}>{t.desc}</div>
                     </button>
                   ))}
                 </div>
               </Section>
- 
               <Section label="02 — Timeline">
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                   {TIMELINE_OPTIONS.map(t => <button key={t.id} onClick={() => setTimeline(t.id)} style={chipSt(timeline === t.id)}>{t.label}</button>)}
                 </div>
               </Section>
- 
               <Section label="03 — Scope limits" sublabel="What can't you change right now?">
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                   {SCOPE_LIMITS.map(s => <button key={s.id} onClick={() => toggleScope(s.id)} style={chipSt(scopeLimits.includes(s.id))}>{s.label}</button>)}
                 </div>
               </Section>
- 
               <Section label="04 — Anything else? (optional)">
                 <textarea value={otherConstraints} onChange={e => setOtherConstraints(e.target.value)} placeholder="e.g. In code freeze until next month. PM must approve nav changes." rows={2} style={{ ...inputSt, resize: "vertical" }} />
               </Section>
- 
               {error && <div style={{ padding: "12px 14px", borderRadius: 8, background: C.redLight, border: `1px solid ${C.redBorder}`, color: C.red, fontSize: 13 }}>{error}</div>}
- 
-              <button disabled={!canAnalyse()} onClick={analyse} style={{ ...btnPrimary, opacity: canAnalyse() ? 1 : 0.4 }}>Run Simulation</button>
+              <button disabled={!canAnalyse()} onClick={analyse} style={{ ...btnPrimary, width: "100%", opacity: canAnalyse() ? 1 : 0.4 }}>Run Simulation</button>
             </div>
           )}
  
-          {/* ── ANALYSING ── */}
-          {step === "analysing" && (
-            <div style={{ textAlign: "center", padding: "80px 0" }}>
-              <div style={{ fontSize: 36, marginBottom: 16, display: "inline-block", animation: "spin 2s linear infinite" }}>◎</div>
-              <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 6, color: C.text }}>Running simulation...</div>
-              <div style={{ color: C.textMuted, fontSize: 14 }}>Simulating user experience against your constraints</div>
-            </div>
-          )}
+          {/* ANALYSING */}
+          {step === "analysing" && <AnalysingLoader />}
  
-          {/* ── RESULTS ── */}
+          {/* RESULTS */}
           {view === "result" && critique && (
-            <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12 }}>
-                <h2 style={{ fontSize: 20, fontWeight: 800, margin: 0, color: C.text, letterSpacing: "-0.02em" }}>Simulation Results</h2>
-              </div>
- 
-              {/* Score + narrative */}
-              <div style={{ ...card, display: "flex", gap: 24, flexWrap: "wrap", alignItems: "flex-start" }}>
-                <div style={{ flexShrink: 0 }}>
-                  <div style={{ fontSize: 11, color: C.textMuted, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 4 }}>Score</div>
-                  <div style={{ fontSize: 48, fontWeight: 900, letterSpacing: "-0.03em", lineHeight: 1, color: critique.overallScore >= 7 ? C.green : critique.overallScore >= 5 ? C.amber : C.red }}>
-                    {critique.overallScore}<span style={{ fontSize: 18, color: C.textMuted }}>/10</span>
-                  </div>
-                </div>
-                <div style={{ flex: 1, minWidth: 220 }}>
-                  <div style={{ fontSize: 11, color: C.textMuted, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 6 }}>Persona Walkthrough</div>
-                  <p style={{ fontSize: 14, lineHeight: 1.7, color: C.textMed, margin: 0, fontStyle: "italic" }}>"{critique.narrativeWalkthrough}"</p>
-                </div>
-              </div>
- 
-              {/* Priority */}
-              <div style={{ ...card, background: C.indigoLight, border: `1px solid ${C.indigoBorder}` }}>
-                <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: C.indigo, marginBottom: 6 }}>★ Priority Focus</div>
-                <p style={{ margin: 0, fontSize: 14, lineHeight: 1.7, color: C.text }}>{critique.priorityFocus}</p>
-              </div>
- 
-              <ResultTabs critique={critique} activeTab={activeTab} setActiveTab={setActiveTab} productType={productType} personaDesc={personaDesc} constraintsSummary={constraintsSummary} simulationId={currentSimId} pmSummary={currentPMSummary} simConversations={{}} />
- 
-              {/* Strengths */}
-              {(critique.strengths || []).length > 0 && (
-                <div>
-                  <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: C.textMuted, marginBottom: 10 }}>Strengths</div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                    {critique.strengths.map((s, i) => (
-                      <div key={i} style={{ padding: "10px 14px", borderRadius: 8, background: C.greenLight, border: `1px solid ${C.greenBorder}`, fontSize: 13, lineHeight: 1.6, color: C.text, display: "flex", gap: 8 }}>
-                        <span style={{ color: C.green, flexShrink: 0 }}>✓</span>{s}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
- 
-              <button onClick={reset} style={{ ...btnPrimary, alignSelf: "flex-start" }}>Save Simulation</button>
+            <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+              <h2 style={{ fontSize: 20, fontWeight: 800, margin: 0, color: C.text, letterSpacing: "-0.02em" }}>Simulation Results</h2>
+              <ResultsSection
+                critique={critique}
+                simulationId={currentSimId}
+                productType={productType}
+                personaDesc={personaDesc}
+                constraintsSummary={constraintsSummary}
+                pmSummary={currentPMSummary}
+                simConversations={{}}
+                simName={simName}
+              />
+              <button onClick={reset} style={{ ...btnPrimary, width: "100%" }}>Save Simulation</button>
             </div>
           )}
  
-          {/* ── DETAIL VIEW ── */}
+          {/* DETAIL */}
           {view === "detail" && selectedSim && (
-            <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
               <div>
-                <h2 style={{ fontSize: 20, fontWeight: 800, margin: "0 0 4px", color: C.text, letterSpacing: "-0.02em" }}>{selectedSim.name}</h2>
-                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                  <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 999, background: C.indigoLight, color: C.indigo, border: `1px solid ${C.indigoBorder}` }}>{selectedSim.product_type}</span>
-                  <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 999, background: C.surfaceAlt, color: C.textMed, border: `1px solid ${C.border}` }}>{selectedSim.persona}</span>
-                  <span style={{ fontSize: 11, color: C.textMuted }}>{new Date(selectedSim.created_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</span>
-                </div>
-              </div>
+                <button onClick={reset} style={{ ...btnGhost, padding: "6px 12px", fontSize: 12, marginBottom: 16, display: "inline-flex", alignItems: "center", gap: 4 }}>← Home</button>
+                <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
+                  <div style={{ flex: 1 }}>
+                    <h2 style={{ fontSize: 20, fontWeight: 800, margin: "0 0 8px", color: C.text, letterSpacing: "-0.02em" }}>{selectedSim.name}</h2>
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12 }}>
+                      <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 999, background: C.surfaceAlt, color: C.textMed, border: `1px solid ${C.borderMed}` }}>{selectedSim.product_type}</span>
+                      <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 999, background: C.surfaceAlt, color: C.textMed, border: `1px solid ${C.borderMed}` }}>{selectedSim.persona?.length > 30 ? "Custom Persona" : selectedSim.persona}</span>
+                      <span style={{ fontSize: 11, color: C.textMuted }}>{new Date(selectedSim.created_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</span>
+                    </div>
+                  </div>
  
-              <div style={{ ...card, display: "flex", gap: 24, flexWrap: "wrap", alignItems: "flex-start" }}>
-                <div style={{ flexShrink: 0 }}>
-                  <div style={{ fontSize: 11, color: C.textMuted, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 4 }}>Score</div>
-                  <div style={{ fontSize: 48, fontWeight: 900, letterSpacing: "-0.03em", lineHeight: 1, color: selectedSim.overall_score >= 7 ? C.green : selectedSim.overall_score >= 5 ? C.amber : C.red }}>
-                    {selectedSim.overall_score}<span style={{ fontSize: 18, color: C.textMuted }}>/10</span>
+                  {/* ⋯ menu */}
+                  <div style={{ position: "relative", flexShrink: 0 }}>
+                    <button onClick={() => setShowDetailMenu(m => !m)}
+                      style={{ width: 44, height: 44, borderRadius: 10, border: "1.5px solid rgba(0,0,0,0.2)", background: C.surface, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 3, boxShadow: "0 1px 3px rgba(0,0,0,0.08)" }}>
+                      <span style={{ width: 4, height: 4, borderRadius: "50%", background: C.textMed, display: "block" }} />
+                      <span style={{ width: 4, height: 4, borderRadius: "50%", background: C.textMed, display: "block" }} />
+                      <span style={{ width: 4, height: 4, borderRadius: "50%", background: C.textMed, display: "block" }} />
+                    </button>
+                    {showDetailMenu && (
+                      <>
+                        <div onClick={() => setShowDetailMenu(false)} style={{ position: "fixed", inset: 0, zIndex: 10 }} />
+                        <div style={{ position: "absolute", right: 0, top: 48, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, boxShadow: "0 4px 16px rgba(0,0,0,0.1)", zIndex: 20, minWidth: 180, overflow: "hidden" }}>
+                          <button onClick={() => { setShowDetailMenu(false); setDetailDrawerOpen(true); }}
+                            style={{ width: "100%", padding: "11px 16px", border: "none", background: "transparent", textAlign: "left", fontSize: 13, color: C.text, cursor: "pointer", display: "flex", alignItems: "center", gap: 8 }}>
+                            📋 View Summary
+                          </button>
+                          {!confirmDeleteDetail ? (
+                            <button onClick={() => setConfirmDeleteDetail(true)}
+                              style={{ width: "100%", padding: "11px 16px", border: "none", borderTop: `1px solid ${C.border}`, background: "transparent", textAlign: "left", fontSize: 13, color: C.red, cursor: "pointer", display: "flex", alignItems: "center", gap: 8 }}>
+                              🗑 Delete Simulation
+                            </button>
+                          ) : (
+                            <div style={{ padding: "12px 16px", borderTop: `1px solid ${C.border}` }}>
+                              <div style={{ fontSize: 12, color: C.textMed, marginBottom: 10 }}>This cannot be undone. Are you sure?</div>
+                              <div style={{ display: "flex", gap: 8 }}>
+                                <button onClick={() => deleteSimulation(selectedSim.id)}
+                                  style={{ flex: 1, padding: "7px 10px", borderRadius: 6, border: "none", background: C.red, color: "#fff", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Delete</button>
+                                <button onClick={() => setConfirmDeleteDetail(false)}
+                                  style={{ flex: 1, padding: "7px 10px", borderRadius: 6, border: `1px solid ${C.border}`, background: "transparent", color: C.textMed, fontSize: 12, cursor: "pointer" }}>Cancel</button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </>
+                    )}
                   </div>
                 </div>
-                <div style={{ flex: 1, minWidth: 220 }}>
-                  <div style={{ fontSize: 11, color: C.textMuted, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 6 }}>Persona Walkthrough</div>
-                  <p style={{ fontSize: 14, lineHeight: 1.7, color: C.textMed, margin: 0, fontStyle: "italic" }}>"{selectedSim.narrative}"</p>
-                </div>
-              </div>
  
-              <div style={{ ...card, background: C.indigoLight, border: `1px solid ${C.indigoBorder}` }}>
-                <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: C.indigo, marginBottom: 6 }}>★ Priority Focus</div>
-                <p style={{ margin: 0, fontSize: 14, lineHeight: 1.7, color: C.text }}>{selectedSim.priority_focus}</p>
-              </div>
- 
-              <ResultTabs
-                critique={{ actNow: selectedSim.act_now, roadmap: selectedSim.roadmap, strengths: selectedSim.strengths }}
-                activeTab={activeTab} setActiveTab={setActiveTab}
-                productType={selectedSim.product_type} personaDesc={selectedSim.persona}
-                constraintsSummary={JSON.stringify(selectedSim.constraints)}
-                simulationId={selectedSim.id} pmSummary={selectedSim.pm_summary}
-                simConversations={simConversations} />
- 
-              {(selectedSim.strengths || []).length > 0 && (
-                <div>
-                  <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: C.textMuted, marginBottom: 10 }}>Strengths</div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                    {selectedSim.strengths.map((s, i) => (
-                      <div key={i} style={{ padding: "10px 14px", borderRadius: 8, background: C.greenLight, border: `1px solid ${C.greenBorder}`, fontSize: 13, lineHeight: 1.6, color: C.text, display: "flex", gap: 8 }}>
-                        <span style={{ color: C.green, flexShrink: 0 }}>✓</span>{s}
+                {/* Simulation details for custom persona */}
+                {(selectedSim.persona?.length > 30 || selectedSim.context) && (
+                  <div style={{ background: C.surfaceAlt, borderRadius: 8, padding: "12px 14px", border: `1px solid ${C.border}`, marginTop: 4 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: C.textMuted, marginBottom: 8 }}>Simulation Details</div>
+                    {selectedSim.persona?.length > 30 && (
+                      <div style={{ marginBottom: selectedSim.context ? 8 : 0 }}>
+                        <span style={{ fontSize: 11, fontWeight: 600, color: C.textMuted }}>Persona: </span>
+                        <span style={{ fontSize: 12, color: C.textMed }}>{selectedSim.persona}</span>
                       </div>
-                    ))}
+                    )}
+                    {selectedSim.context && (
+                      <div>
+                        <span style={{ fontSize: 11, fontWeight: 600, color: C.textMuted }}>Context: </span>
+                        <span style={{ fontSize: 12, color: C.textMed }}>{selectedSim.context}</span>
+                      </div>
+                    )}
                   </div>
-                </div>
-              )}
+                )}
+              </div>
  
-              <button onClick={() => { setView("home"); setActiveTab("now"); }} style={btnGhost}>← Back to Home</button>
+              <ResultsSection
+                critique={{
+                  narrativeWalkthrough: selectedSim.narrative,
+                  priorityFocus: selectedSim.priority_focus,
+                  actNow: selectedSim.act_now,
+                  roadmap: selectedSim.roadmap,
+                  strengths: selectedSim.strengths,
+                  signals: selectedSim.signals
+                }}
+                simulationId={selectedSim.id}
+                productType={selectedSim.product_type}
+                personaDesc={selectedSim.persona}
+                constraintsSummary={selectedSim.constraints || "{}"}
+                pmSummary={selectedSim.pm_summary}
+                simConversations={simConversations}
+                simName={selectedSim.name}
+                externalDrawerOpen={detailDrawerOpen}
+                onExternalDrawerClose={() => setDetailDrawerOpen(false)}
+              />
             </div>
           )}
  
-          {/* ── SETTINGS ── */}
+          {/* SETTINGS */}
           {view === "settings" && (
             <div style={{ display: "flex", flexDirection: "column", gap: 24, maxWidth: 520 }}>
               <div>
@@ -1144,7 +846,6 @@ Max 3 actNow items, max 3 roadmap items. Raw JSON only:
                 <h2 style={{ fontSize: 22, fontWeight: 800, margin: "0 0 4px", color: C.text, letterSpacing: "-0.02em" }}>Settings</h2>
                 <p style={{ fontSize: 14, color: C.textMuted, margin: 0 }}>Manage your profile and account details.</p>
               </div>
- 
               <div style={card}>
                 <div style={{ fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: C.textMuted, marginBottom: 16 }}>Profile</div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -1164,7 +865,6 @@ Max 3 actNow items, max 3 roadmap items. Raw JSON only:
                   </div>
                 </div>
               </div>
- 
               <div style={card}>
                 <div style={{ fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: C.textMuted, marginBottom: 16 }}>Change Password</div>
                 <div>
@@ -1172,17 +872,13 @@ Max 3 actNow items, max 3 roadmap items. Raw JSON only:
                   <input value={settingsPassword} onChange={e => setSettingsPassword(e.target.value)} type="password" placeholder="Leave blank to keep current password" style={inputSt} />
                 </div>
               </div>
- 
               {settingsMessage && (
                 <div style={{ padding: "12px 14px", borderRadius: 8, background: settingsMessage.startsWith("Error") ? C.redLight : C.greenLight, border: `1px solid ${settingsMessage.startsWith("Error") ? C.redBorder : C.greenBorder}`, color: settingsMessage.startsWith("Error") ? C.red : C.green, fontSize: 13 }}>
                   {settingsMessage}
                 </div>
               )}
- 
               <div style={{ display: "flex", gap: 10 }}>
-                <button onClick={saveSettings} disabled={settingsSaving} style={{ ...btnPrimary, opacity: settingsSaving ? 0.6 : 1 }}>
-                  {settingsSaving ? "Saving..." : "Save Changes"}
-                </button>
+                <button onClick={saveSettings} disabled={settingsSaving} style={{ ...btnPrimary, opacity: settingsSaving ? 0.6 : 1 }}>{settingsSaving ? "Saving..." : "Save Changes"}</button>
                 <button onClick={handleSignOut} style={{ ...btnGhost, color: C.red, borderColor: C.redBorder }}>Sign Out</button>
               </div>
             </div>
@@ -1192,4 +888,3 @@ Max 3 actNow items, max 3 roadmap items. Raw JSON only:
     </div>
   );
 }
- 
