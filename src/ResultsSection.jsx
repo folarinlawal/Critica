@@ -108,17 +108,17 @@ function SignalCard({ signalKey, rating, explanation }) {
   if (!label) return null;
   const ratingLabel = Object.keys(RATING_STYLE).find(k => RATING_STYLE[k] === style) || rating;
   return (
-    <div style={{ background: C.surface, borderRadius: 10, border: `1px solid ${C.border}`, padding: "18px 20px", display: "flex", flexDirection: "column", gap: 10 }}>
-      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8 }}>
+    <div style={{ background: C.surface, borderRadius: 10, border: `1px solid ${C.border}`, padding: "20px 22px", display: "flex", flexDirection: "column", gap: 12 }}>
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
         <div>
-          <div style={{ fontSize: 12, fontWeight: 700, color: C.textMuted, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 2 }}>{label}</div>
-          <div style={{ fontSize: 11, color: C.textMuted, lineHeight: 1.4 }}>{desc}</div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: C.textMuted, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4 }}>{label}</div>
+          <div style={{ fontSize: 11, color: C.textMuted, lineHeight: 1.5 }}>{desc}</div>
         </div>
-        <span style={{ fontSize: 11, fontWeight: 700, color: style.color, padding: "3px 10px", borderRadius: 999, background: style.bg, border: `1px solid ${style.border}`, whiteSpace: "nowrap", flexShrink: 0 }}>
+        <span style={{ fontSize: 11, fontWeight: 700, color: style.color, padding: "4px 12px", borderRadius: 999, background: style.bg, border: `1px solid ${style.border}`, whiteSpace: "nowrap", flexShrink: 0 }}>
           {ratingLabel}
         </span>
       </div>
-      <p style={{ margin: 0, fontSize: 13, lineHeight: 1.65, color: C.textMed, borderTop: `1px solid ${C.border}`, paddingTop: 10 }}>{explanation}</p>
+      <p style={{ margin: 0, fontSize: 13, lineHeight: 1.65, color: C.textMed, borderTop: `1px solid ${C.border}`, paddingTop: 12 }}>{explanation}</p>
     </div>
   );
 }
@@ -257,8 +257,8 @@ CONTEXT: Product: ${productType} | Persona: ${personaDesc} | Constraints: ${cons
  
   return (
     <div style={{ borderRadius: 10, overflow: "hidden", border: "1px solid rgba(0,0,0,0.1)", background: resolved ? C.surfaceAlt : C.surface, opacity: resolved ? 0.65 : 1, transition: "all 0.2s" }}>
-      <div style={{ padding: "16px 18px" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
+      <div style={{ padding: "20px 22px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
           <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.04em", textTransform: "lowercase", color: resolved ? C.textMuted : sevColor(finding.severity), padding: "2px 8px", borderRadius: 999, background: resolved ? "transparent" : sevBg(finding.severity), border: `1px solid ${resolved ? C.border : sevBorder(finding.severity)}` }}>
             {finding.severity}
           </span>
@@ -271,7 +271,7 @@ CONTEXT: Product: ${productType} | Persona: ${personaDesc} | Constraints: ${cons
             <span style={{ fontSize: 10, fontWeight: 700, color: C.green, padding: "2px 8px", borderRadius: 999, background: C.greenLight, border: `1px solid ${C.greenBorder}` }}>✓ resolved</span>
           )}
         </div>
-        <h4 style={{ fontSize: 14, fontWeight: 700, margin: "0 0 8px", lineHeight: 1.4, color: resolved ? C.textMuted : C.text, textDecoration: resolved ? "line-through" : "none" }}>
+        <h4 style={{ fontSize: 14, fontWeight: 700, margin: "0 0 12px", lineHeight: 1.4, color: resolved ? C.textMuted : C.text, textDecoration: resolved ? "line-through" : "none" }}>
           {finding.title}
         </h4>
         {!resolved && (
@@ -348,56 +348,106 @@ CONTEXT: Product: ${productType} | Persona: ${personaDesc} | Constraints: ${cons
   );
 }
  
-function SimulationInputs({ productType, personaDesc, constraintsSummary }) {
-  const [open, setOpen] = useState(false);
+const TEAM_SIZE_LABELS = {
+  solo: "Solo (just me)",
+  small: "Small (2–5 people)",
+  medium: "Medium (6–15 people)",
+  large: "Large (15+ people)"
+};
+
+const INPUT_TYPE_LABELS = {
+  figma: "Prototype Link",
+  screenshots: "Screenshots",
+  recording: "Screen Recording"
+};
+
+function SimulationDetailsSidebar({ inputType, productType, personaDesc, constraintsSummary, context, date }) {
   let constraints = {};
   try { constraints = JSON.parse(constraintsSummary); } catch {}
-  const isCustomPersona = personaDesc && personaDesc.length > 40;
+  const isCustomPersona = personaDesc === "Custom Persona";
+  const customPersonaDescription = constraints.customPersonaDescription || null;
+  const scopeLabels = Array.isArray(constraints.scopeLimits) ? constraints.scopeLimits : [];
+  const teamSizeLabel = TEAM_SIZE_LABELS[constraints.teamSize?.toLowerCase()] || constraints.teamSize;
+
+  const Row = ({ label, value }) => value ? (
+    <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+      <div style={{ fontSize: 10, fontWeight: 700, color: C.textMuted, textTransform: "uppercase", letterSpacing: "0.08em" }}>{label}</div>
+      <div style={{ fontSize: 13, color: C.text, lineHeight: 1.5 }}>{value}</div>
+    </div>
+  ) : null;
+
+  const Divider = () => <div style={{ height: 1, background: C.border }} />;
+
   return (
-    <div style={{ borderRadius: 10, border: `1px solid ${C.border}`, overflow: "hidden" }}>
-      <button onClick={() => setOpen(o => !o)} style={{ width: "100%", padding: "12px 16px", background: C.surfaceAlt, border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 12, fontWeight: 600, color: C.textMuted }}>
-        <span style={{ textTransform: "uppercase", letterSpacing: "0.08em" }}>Simulation Inputs</span>
-        <span>{open ? "▴" : "▾"}</span>
-      </button>
-      {open && (
-        <div style={{ padding: "16px", background: C.surface, display: "flex", flexDirection: "column", gap: 12 }}>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-            <div>
-              <div style={{ fontSize: 11, fontWeight: 600, color: C.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>Product Type</div>
-              <div style={{ fontSize: 13, color: C.text }}>{productType}</div>
-            </div>
-            {constraints.teamSize && (
-              <div>
-                <div style={{ fontSize: 11, fontWeight: 600, color: C.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>Team Size</div>
-                <div style={{ fontSize: 13, color: C.text }}>{constraints.teamSize}</div>
-              </div>
-            )}
-            {constraints.timeline && (
-              <div>
-                <div style={{ fontSize: 11, fontWeight: 600, color: C.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>Timeline</div>
-                <div style={{ fontSize: 13, color: C.text }}>{constraints.timeline}</div>
-              </div>
-            )}
-          </div>
-          {isCustomPersona && (
-            <div>
-              <div style={{ fontSize: 11, fontWeight: 600, color: C.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>Custom Persona</div>
-              <div style={{ fontSize: 13, color: C.text, lineHeight: 1.6 }}>{personaDesc}</div>
-            </div>
-          )}
-          {constraints.otherConstraints && (
-            <div>
-              <div style={{ fontSize: 11, fontWeight: 600, color: C.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>Additional Constraints</div>
-              <div style={{ fontSize: 13, color: C.text, lineHeight: 1.6 }}>{constraints.otherConstraints}</div>
-            </div>
+    <div style={{ background: C.surface, borderRadius: 12, border: `1px solid ${C.border}`, padding: "20px", display: "flex", flexDirection: "column", gap: 0, position: "sticky", top: 24 }}>
+      <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: C.textMuted, paddingBottom: 16, borderBottom: `1px solid ${C.border}`, marginBottom: 16 }}>
+        Simulation Details
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+
+        {/* Input */}
+        {inputType && <Row label="Input" value={INPUT_TYPE_LABELS[inputType] || inputType} />}
+
+        {/* Product Type */}
+        <Row label="Product Type" value={productType} />
+
+        <Divider />
+
+        {/* Persona */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: C.textMuted, textTransform: "uppercase", letterSpacing: "0.08em" }}>Persona</div>
+          {isCustomPersona ? (
+            <>
+              <div style={{ fontSize: 13, color: C.text, fontWeight: 600 }}>Custom Persona</div>
+              {customPersonaDescription && (
+                <div style={{ fontSize: 12, color: C.textMed, lineHeight: 1.65, fontStyle: "italic", padding: "10px 12px", background: C.surfaceAlt, borderRadius: 8, border: `1px solid ${C.border}`, marginTop: 2 }}>
+                  "{customPersonaDescription}"
+                </div>
+              )}
+            </>
+          ) : (
+            <div style={{ fontSize: 13, color: C.text }}>{personaDesc}</div>
           )}
         </div>
-      )}
+
+        {/* Additional Context */}
+        {context && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: C.textMuted, textTransform: "uppercase", letterSpacing: "0.08em" }}>Additional Context</div>
+            <div style={{ fontSize: 13, color: C.textMed, lineHeight: 1.6 }}>{context}</div>
+          </div>
+        )}
+
+        <Divider />
+
+        {/* Constraints */}
+        {teamSizeLabel && <Row label="Team Size" value={teamSizeLabel} />}
+        {constraints.timeline && <Row label="Timeline" value={constraints.timeline} />}
+        {scopeLabels.length > 0 && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: C.textMuted, textTransform: "uppercase", letterSpacing: "0.08em" }}>Scope Limits</div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              {scopeLabels.map((s, i) => (
+                <span key={i} style={{ fontSize: 11, fontWeight: 600, padding: "3px 10px", borderRadius: 999, background: C.surfaceAlt, color: C.textMed, border: `1px solid ${C.border}` }}>{s}</span>
+              ))}
+            </div>
+          </div>
+        )}
+        {constraints.otherConstraints && <Row label="Additional Notes" value={constraints.otherConstraints} />}
+
+        {date && (
+          <>
+            <Divider />
+            <Row label="Run On" value={date} />
+          </>
+        )}
+
+      </div>
     </div>
   );
 }
  
-export default function ResultsSection({ critique, simulationId, productType, personaDesc, constraintsSummary, pmSummary, simConversations, simName, externalDrawerOpen, onExternalDrawerClose }) {
+export default function ResultsSection({ critique, simulationId, inputType, productType, personaDesc, constraintsSummary, context, pmSummary, simConversations, simName, date, externalDrawerOpen, onExternalDrawerClose }) {
   const [activeTab, setActiveTab] = useState("now");
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [resolvedMap, setResolvedMap] = useState(() => {
@@ -407,10 +457,10 @@ export default function ResultsSection({ critique, simulationId, productType, pe
     });
     return map;
   });
- 
+
   const isDrawerOpen = drawerOpen || externalDrawerOpen || false;
   const closeDrawer = () => { setDrawerOpen(false); if (onExternalDrawerClose) onExternalDrawerClose(); };
- 
+
   const actNow = critique.actNow || critique.act_now || [];
   const roadmap = critique.roadmap || [];
   const strengths = critique.strengths || [];
@@ -420,114 +470,127 @@ export default function ResultsSection({ critique, simulationId, productType, pe
   const summary = pmSummary || critique.pm_summary || "";
   const assessment = deriveAssessment(signals);
   const findings = activeTab === "now" ? actNow : roadmap;
- 
+
   const handleResolveChange = (title, isResolved) => {
     setResolvedMap(prev => ({ ...prev, [title]: isResolved }));
   };
- 
+
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 36 }}>
+    <div style={{ display: "flex", gap: 24, alignItems: "flex-start" }}>
       <SummaryDrawer open={isDrawerOpen} onClose={closeDrawer} summary={summary} simName={simName} />
- 
-      {/* Combined overview card */}
-      <div style={{ background: C.surface, borderRadius: 12, border: `1px solid ${C.border}`, padding: "24px" }}>
-        {assessment && (
-          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 20, marginBottom: 20 }}>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: C.textMuted, marginBottom: 10 }}>Overall Assessment</div>
-              <span style={{ fontSize: 13, fontWeight: 700, color: assessment.color, padding: "4px 14px", borderRadius: 999, background: assessment.bg, border: `1px solid ${assessment.border}` }}>
-                {assessment.label}
-              </span>
-              <p style={{ margin: "10px 0 0", fontSize: 13, lineHeight: 1.6, color: C.textMed }}>{assessment.explanation}</p>
+
+      {/* LEFT — main output column */}
+      <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 28 }}>
+
+        {/* Overall Assessment card */}
+        <div style={{ background: C.surface, borderRadius: 12, border: `1px solid ${C.border}`, padding: "32px" }}>
+          {assessment && (
+            <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 24, marginBottom: 24 }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: C.textMuted, marginBottom: 24 }}>Overall Assessment</div>
+                <span style={{ fontSize: 13, fontWeight: 700, color: assessment.color, padding: "5px 16px", borderRadius: 999, background: assessment.bg, border: `1px solid ${assessment.border}` }}>
+                  {assessment.label}
+                </span>
+                <p style={{ margin: "16px 0 0", fontSize: 14, lineHeight: 1.7, color: C.textMed }}>{assessment.explanation}</p>
+              </div>
+              <div style={{ flexShrink: 0, paddingTop: 4 }}>
+                <AssessmentIcon type={assessment.icon} color={assessment.color} />
+              </div>
             </div>
-            <div style={{ flexShrink: 0 }}>
-              <AssessmentIcon type={assessment.icon} color={assessment.color} />
+          )}
+          <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 24 }}>
+            <div style={{ fontSize: 11, color: C.textMuted, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 12 }}>Persona Walkthrough</div>
+            <p style={{ fontSize: 14, lineHeight: 1.8, color: C.textMed, margin: 0, fontStyle: "italic" }}>"{narrative}"</p>
+          </div>
+        </div>
+
+        {/* Design signals 2x2 */}
+        {Object.keys(signals).length > 0 && (
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: C.textMuted, marginBottom: 16 }}>Design Signals</div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+              {Object.entries(SIGNAL_LABELS).map(([key]) => {
+                const sig = signals[key];
+                if (!sig) return null;
+                return <SignalCard key={key} signalKey={key} rating={sig.rating} explanation={sig.explanation} />;
+              })}
             </div>
           </div>
         )}
-        <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 20 }}>
-          <div style={{ fontSize: 11, color: C.textMuted, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 10 }}>Persona Walkthrough</div>
-          <p style={{ fontSize: 14, lineHeight: 1.75, color: C.textMed, margin: 0, fontStyle: "italic" }}>"{narrative}"</p>
-        </div>
+
+        {/* Priority focus */}
+        {priorityFocus && (
+          <div style={{ background: C.indigoLight, borderRadius: 10, border: `1px solid ${C.indigoBorder}`, padding: "20px 24px" }}>
+            <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: C.indigo, marginBottom: 12 }}>★ Priority Focus</div>
+            <p style={{ margin: 0, fontSize: 14, lineHeight: 1.75, color: C.text }}>{priorityFocus}</p>
+          </div>
+        )}
+
+        {/* Findings tabs */}
+        {(actNow.length > 0 || roadmap.length > 0) && (
+          <div>
+            <div style={{ display: "flex", borderBottom: `2px solid ${C.border}`, marginBottom: 20 }}>
+              {[
+                { id: "now", label: "Act Now", count: actNow.length },
+                { id: "roadmap", label: "Roadmap", count: roadmap.length }
+              ].map(tab => (
+                <button key={tab.id} onClick={() => setActiveTab(tab.id)} style={{ flex: 1, padding: "12px 16px", border: "none", background: "transparent", cursor: "pointer", fontSize: 13, fontWeight: activeTab === tab.id ? 700 : 500, color: activeTab === tab.id ? C.text : C.textMuted, borderBottom: activeTab === tab.id ? `2px solid ${C.accent}` : "2px solid transparent", marginBottom: "-2px", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, transition: "all 0.15s" }}>
+                  {tab.label}
+                  <span style={{ fontSize: 11, fontWeight: 600, padding: "1px 7px", borderRadius: 999, background: activeTab === tab.id ? C.accent : "transparent", color: activeTab === tab.id ? "#fff" : C.textMuted, border: activeTab === tab.id ? "none" : "1.5px solid rgba(0,0,0,0.25)", minWidth: 20, textAlign: "center" }}>
+                    {tab.count}
+                  </span>
+                </button>
+              ))}
+            </div>
+            <div style={{ fontSize: 12, color: C.textMuted, marginBottom: 20, padding: "10px 14px", background: C.surfaceAlt, borderRadius: 6 }}>
+              {activeTab === "now"
+                ? "These findings are within your current constraints. Discuss any finding to add context, then mark it as resolved."
+                : "These findings fall outside your current constraints. Use the Summary to share them with your PM."}
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              {findings.length === 0 ? (
+                <div style={{ padding: "32px", textAlign: "center", color: C.textMuted, fontSize: 14 }}>
+                  {activeTab === "now" ? "No immediate actions — check the Roadmap tab." : "Nothing for the roadmap — everything fits your constraints."}
+                </div>
+              ) : findings.map((fp, i) => (
+                <FindingThread key={i} finding={fp} type={activeTab}
+                  productType={productType} personaDesc={personaDesc} constraintsSummary={constraintsSummary}
+                  simulationId={simulationId}
+                  savedMessages={simConversations?.[fp.title] || []}
+                  savedResolved={resolvedMap[fp.title] || false}
+                  onResolveChange={handleResolveChange}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Strengths */}
+        {strengths.length > 0 && (
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: C.textMuted, marginBottom: 10 }}>Strengths</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {strengths.map((s, i) => (
+                <div key={i} style={{ padding: "12px 16px", borderRadius: 8, background: C.greenLight, border: `1px solid ${C.greenBorder}`, fontSize: 13, lineHeight: 1.65, color: C.text, display: "flex", gap: 10 }}>
+                  <span style={{ color: C.green, flexShrink: 0 }}>✓</span>{s}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
- 
-      {/* Design signals 2x2 */}
-      {Object.keys(signals).length > 0 && (
-        <div>
-          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: C.textMuted, marginBottom: 12 }}>Design Signals</div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-            {Object.entries(SIGNAL_LABELS).map(([key]) => {
-              const sig = signals[key];
-              if (!sig) return null;
-              return <SignalCard key={key} signalKey={key} rating={sig.rating} explanation={sig.explanation} />;
-            })}
-          </div>
-        </div>
-      )}
- 
-      {/* Priority focus */}
-      {priorityFocus && (
-        <div style={{ background: C.indigoLight, borderRadius: 10, border: `1px solid ${C.indigoBorder}`, padding: "16px 20px" }}>
-          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: C.indigo, marginBottom: 8 }}>★ Priority Focus</div>
-          <p style={{ margin: 0, fontSize: 14, lineHeight: 1.7, color: C.text }}>{priorityFocus}</p>
-        </div>
-      )}
- 
-      {/* Findings tabs */}
-      {(actNow.length > 0 || roadmap.length > 0) && (
-        <div>
-          <div style={{ display: "flex", borderBottom: `2px solid ${C.border}`, marginBottom: 20 }}>
-            {[
-              { id: "now", label: "Act Now", count: actNow.length },
-              { id: "roadmap", label: "Roadmap", count: roadmap.length }
-            ].map(tab => (
-              <button key={tab.id} onClick={() => setActiveTab(tab.id)} style={{ flex: 1, padding: "12px 16px", border: "none", background: "transparent", cursor: "pointer", fontSize: 13, fontWeight: activeTab === tab.id ? 700 : 500, color: activeTab === tab.id ? C.text : C.textMuted, borderBottom: activeTab === tab.id ? `2px solid ${C.accent}` : "2px solid transparent", marginBottom: "-2px", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, transition: "all 0.15s" }}>
-                {tab.label}
-                <span style={{ fontSize: 11, fontWeight: 600, padding: "1px 7px", borderRadius: 999, background: activeTab === tab.id ? C.accent : "transparent", color: activeTab === tab.id ? "#fff" : C.textMuted, border: activeTab === tab.id ? "none" : "1.5px solid rgba(0,0,0,0.25)", minWidth: 20, textAlign: "center" }}>
-                  {tab.count}
-                </span>
-              </button>
-            ))}
-          </div>
-          <div style={{ fontSize: 12, color: C.textMuted, marginBottom: 16, padding: "8px 12px", background: C.surfaceAlt, borderRadius: 6 }}>
-            {activeTab === "now"
-              ? "These findings are within your current constraints. Discuss any finding to add context, then mark it as resolved."
-              : "These findings fall outside your current constraints. Use the Summary to share them with your PM."}
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            {findings.length === 0 ? (
-              <div style={{ padding: "32px", textAlign: "center", color: C.textMuted, fontSize: 14 }}>
-                {activeTab === "now" ? "No immediate actions — check the Roadmap tab." : "Nothing for the roadmap — everything fits your constraints."}
-              </div>
-            ) : findings.map((fp, i) => (
-              <FindingThread key={i} finding={fp} type={activeTab}
-                productType={productType} personaDesc={personaDesc} constraintsSummary={constraintsSummary}
-                simulationId={simulationId}
-                savedMessages={simConversations?.[fp.title] || []}
-                savedResolved={resolvedMap[fp.title] || false}
-                onResolveChange={handleResolveChange}
-              />
-            ))}
-          </div>
-        </div>
-      )}
- 
-      {/* Strengths */}
-      {strengths.length > 0 && (
-        <div>
-          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: C.textMuted, marginBottom: 10 }}>Strengths</div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            {strengths.map((s, i) => (
-              <div key={i} style={{ padding: "10px 14px", borderRadius: 8, background: C.greenLight, border: `1px solid ${C.greenBorder}`, fontSize: 13, lineHeight: 1.6, color: C.text, display: "flex", gap: 8 }}>
-                <span style={{ color: C.green, flexShrink: 0 }}>✓</span>{s}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
- 
-      {/* Simulation inputs */}
-      <SimulationInputs productType={productType} personaDesc={personaDesc} constraintsSummary={constraintsSummary} />
+
+      {/* RIGHT — simulation details sidebar */}
+      <div style={{ width: 260, flexShrink: 0 }}>
+        <SimulationDetailsSidebar
+          inputType={inputType}
+          productType={productType}
+          personaDesc={personaDesc}
+          constraintsSummary={constraintsSummary}
+          context={context}
+          date={date}
+        />
+      </div>
     </div>
   );
 }

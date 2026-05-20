@@ -100,16 +100,23 @@ function AnalysingLoader() {
   );
 }
  
-function SimulationCard({ sim, onView }) {
+function SimulationCard({ sim, onView, projectName }) {
   const date = new Date(sim.created_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
-  const personaLabel = sim.persona?.length > 30 ? "Custom Persona" : sim.persona;
+  const personaLabel = sim.persona === "Custom Persona" ? "Custom Persona" : sim.persona;
   return (
-    <div style={{ ...card, cursor: "pointer", transition: "box-shadow 0.15s" }}
+    <div style={{ ...card, padding: "22px 24px", cursor: "pointer", transition: "box-shadow 0.15s" }}
       onMouseEnter={e => e.currentTarget.style.boxShadow = "0 2px 12px rgba(0,0,0,0.08)"}
       onMouseLeave={e => e.currentTarget.style.boxShadow = "none"}
       onClick={() => onView(sim)}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
         <div style={{ flex: 1 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
+            {projectName && (
+              <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 999, background: C.indigoLight, color: C.indigo, border: `1px solid ${C.indigoBorder}`, letterSpacing: "0.04em" }}>
+                ◈ {projectName}
+              </span>
+            )}
+          </div>
           <div style={{ fontSize: 15, fontWeight: 700, color: C.text, marginBottom: 8 }}>{sim.name}</div>
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
             <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 999, background: C.surfaceAlt, color: C.textMed, border: `1px solid ${C.borderMed}` }}>{sim.product_type}</span>
@@ -171,6 +178,16 @@ export default function App() {
   const [confirmDeleteDetail, setConfirmDeleteDetail] = useState(false);
   const [detailDrawerOpen, setDetailDrawerOpen] = useState(false);
  
+  const [projects, setProjects] = useState([]);
+  const [selectedProject, setSelectedProject] = useState(null);
+  const [newProjectName, setNewProjectName] = useState("");
+  const [showNewProjectInput, setShowNewProjectInput] = useState(false);
+  const [projectMenuId, setProjectMenuId] = useState(null);
+  const [renamingProjectId, setRenamingProjectId] = useState(null);
+  const [renameValue, setRenameValue] = useState("");
+  const [deletingProjectId, setDeletingProjectId] = useState(null);
+  const [deleteConfirmValue, setDeleteConfirmValue] = useState("");
+  const [simProjectId, setSimProjectId] = useState(null);
   const [settingsFirstName, setSettingsFirstName] = useState("");
   const [settingsLastName, setSettingsLastName] = useState("");
   const [settingsEmail, setSettingsEmail] = useState("");
@@ -192,7 +209,7 @@ export default function App() {
     return () => subscription.unsubscribe();
   }, []);
  
-  useEffect(() => { if (user) loadSimulations(); }, [user]);
+  useEffect(() => { if (user) { loadProjects(); loadSimulations(); } }, [user]);
  
   const loadProfile = (u) => {
     const meta = u.user_metadata || {};
@@ -246,10 +263,47 @@ export default function App() {
     finally { setSettingsSaving(false); }
   };
  
+  const loadProjects = async () => {
+    if (!user) return;
+    const { data } = await supabase.from("projects").select("*").eq("user_id", user.id).order("created_at", { ascending: true });
+    if (data) setProjects(data);
+  };
+
   const loadSimulations = async () => {
     if (!user) return;
-    const { data } = await supabase.from("simulations").select("*").eq("user_id", user.id).order("created_at", { ascending: false });
+    const { data } = await supabase.from("simulations").select("*, projects(name)").eq("user_id", user.id).order("created_at", { ascending: false });
     if (data) setSimulations(data);
+  };
+
+  const createProject = async () => {
+    const name = newProjectName.trim();
+    if (!name) return;
+    const { data } = await supabase.from("projects").insert({ user_id: user.id, name }).select().single();
+    if (data) {
+      setProjects(prev => [...prev, data]);
+      setNewProjectName("");
+      setShowNewProjectInput(false);
+    }
+  };
+
+  const renameProject = async (id) => {
+    const name = renameValue.trim();
+    if (!name) return;
+    await supabase.from("projects").update({ name }).eq("id", id);
+    setProjects(prev => prev.map(p => p.id === id ? { ...p, name } : p));
+    setRenamingProjectId(null);
+    setRenameValue("");
+    setProjectMenuId(null);
+  };
+
+  const deleteProject = async (id) => {
+    await supabase.from("simulations").delete().eq("project_id", id);
+    await supabase.from("projects").delete().eq("id", id);
+    setProjects(prev => prev.filter(p => p.id !== id));
+    setSimulations(prev => prev.filter(s => s.project_id !== id));
+    setDeletingProjectId(null);
+    setDeleteConfirmValue("");
+    setProjectMenuId(null);
   };
  
   const loadSimulationDetail = async (sim) => {
@@ -291,7 +345,7 @@ export default function App() {
   const canProceedToConstraints = () => {
     const hasInput = inputType === "figma" ? figmaUrl.trim().length > 0 : files.length > 0;
     const hasPersona = selectedPersona && (selectedPersona !== "custom" || customPersona.trim().length > 0);
-    return hasInput && hasPersona && productType.length > 0;
+    return hasInput && hasPersona && productType.length > 0 && !!simProjectId;
   };
   const canAnalyse = () => teamSize && timeline && scopeLimits.length > 0;
  
@@ -306,7 +360,7 @@ export default function App() {
     const ts = TEAM_SIZES.find(t => t.id === teamSize);
     const tl = TIMELINE_OPTIONS.find(t => t.id === timeline);
     const sl = scopeLimits.map(s => SCOPE_LIMITS.find(o => o.id === s)?.label).filter(Boolean);
-    return JSON.stringify({ teamSize: ts?.label, timeline: tl?.label, scopeLimits: sl, otherConstraints });
+    return JSON.stringify({ teamSize: ts?.label, timeline: tl?.label, scopeLimits: sl, otherConstraints, customPersonaDescription: selectedPersona === "custom" ? customPersona : null });
   };
  
   const getPersonaDesc = () => {
@@ -353,7 +407,7 @@ export default function App() {
       const inputDesc = inputType === "figma" ? `Prototype URL: ${figmaUrl}` : inputType === "screenshots" ? `${files.length} screenshot(s)` : "Screen recording";
       const constraintsSummary = buildConstraintsSummary();
       const persona = PERSONAS.find(p => p.id === selectedPersona);
-      const personaLabel = selectedPersona === "custom" ? customPersona.slice(0, 30) : persona?.label;
+      const personaLabel = selectedPersona === "custom" ? "Custom Persona" : persona?.label;
  
       const userMessage = `You are an expert UX design critic. Respond ONLY with raw JSON, no markdown.
  
@@ -407,6 +461,7 @@ Return this exact JSON (max 3 actNow, max 3 roadmap, all strings under 25 words)
  
       const { data: simData } = await supabase.from("simulations").insert({
         user_id: user.id,
+        project_id: simProjectId,
         name: simName || autoName,
         product_type: productType,
         input_type: inputType,
@@ -440,6 +495,9 @@ Return this exact JSON (max 3 actNow, max 3 roadmap, all strings under 25 words)
     setTeamSize(null); setTimeline(null); setScopeLimits([]); setOtherConstraints("");
     setCurrentSimId(null); setStep("input"); setCurrentPMSummary("");
     setShowDetailMenu(false); setConfirmDeleteDetail(false); setDetailDrawerOpen(false);
+    setSelectedProject(null); setSimProjectId(null);
+    setProjectMenuId(null); setRenamingProjectId(null); setDeletingProjectId(null);
+    setDeleteConfirmValue(""); setRenameValue("");
   };
  
   const personaDesc = selectedPersona ? getPersonaDesc() : "";
@@ -547,7 +605,7 @@ Return this exact JSON (max 3 actNow, max 3 roadmap, all strings under 25 words)
  
       {/* MAIN APP */}
       {user && (
-        <div style={{ maxWidth: 900, margin: "0 auto", padding: "0 24px 60px" }}>
+        <div style={{ maxWidth: 1200, margin: "0 auto", padding: "0 24px 60px" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "20px 0 32px", borderBottom: `1px solid ${C.border}`, marginBottom: 36 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }} onClick={reset}>
               <div style={{ width: 28, height: 28, borderRadius: 6, background: C.accent, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -562,38 +620,142 @@ Return this exact JSON (max 3 actNow, max 3 roadmap, all strings under 25 words)
  
           {/* HOME */}
           {view === "home" && (
-            <div style={{ display: "flex", flexDirection: "column", gap: 32 }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 40 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 16 }}>
                 <div>
                   <h1 style={{ fontSize: "clamp(24px,4vw,34px)", fontWeight: 800, margin: "0 0 6px", color: C.text, letterSpacing: "-0.02em" }}>{greeting()} 👋</h1>
                   <p style={{ fontSize: 15, color: C.textMuted, margin: 0 }}>
-                    {simulations.length === 0 ? "Run your first simulation to get started." : `You've run ${simulations.length} simulation${simulations.length === 1 ? "" : "s"} so far.`}
+                    {projects.length === 0 ? "Create a project to get started." : `${projects.length} project${projects.length === 1 ? "" : "s"}, ${simulations.length} simulation${simulations.length === 1 ? "" : "s"}.`}
                   </p>
                 </div>
                 <button onClick={() => setView("new")} style={{ ...btnPrimary, padding: "12px 20px", whiteSpace: "nowrap" }}>+ Run a Simulation</button>
               </div>
- 
+
               {deleteMessage && (
                 <div style={{ padding: "12px 16px", borderRadius: 8, background: "#F0FDF4", border: "1px solid #BBF7D0", color: "#166534", fontSize: 13, fontWeight: 500, display: "flex", alignItems: "center", gap: 8 }}>
                   <span style={{ fontWeight: 700 }}>✓</span> {deleteMessage}
                 </div>
               )}
- 
+
+              {/* PROJECTS */}
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: C.textMuted, marginBottom: 16 }}>Projects</div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16 }}>
+
+                  {/* New Project card — always first */}
+                  {!showNewProjectInput ? (
+                    <div onClick={() => setShowNewProjectInput(true)}
+                      style={{ borderRadius: 12, border: `1.5px dashed ${C.borderMed}`, background: "transparent", padding: "28px 24px", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, minHeight: 140, transition: "all 0.15s" }}
+                      onMouseEnter={e => { e.currentTarget.style.background = C.indigoLight; e.currentTarget.style.borderColor = C.indigo; }}
+                      onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.borderColor = C.borderMed; }}>
+                      <div style={{ width: 36, height: 36, borderRadius: "50%", background: C.surfaceAlt, border: `1.5px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, color: C.textMuted }}>+</div>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: C.textMuted, textAlign: "center" }}>New Project</div>
+                    </div>
+                  ) : (
+                    <div style={{ borderRadius: 12, border: `1.5px solid ${C.indigo}`, background: C.indigoLight, padding: "24px", display: "flex", flexDirection: "column", gap: 12, minHeight: 140, justifyContent: "center" }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: C.indigo, textTransform: "uppercase", letterSpacing: "0.08em" }}>New Project</div>
+                      <input
+                        autoFocus
+                        value={newProjectName}
+                        onChange={e => setNewProjectName(e.target.value)}
+                        onKeyDown={e => { if (e.key === "Enter") createProject(); if (e.key === "Escape") { setShowNewProjectInput(false); setNewProjectName(""); } }}
+                        placeholder="Project name..."
+                        style={{ ...inputSt, fontSize: 13, padding: "9px 12px" }}
+                      />
+                      <div style={{ display: "flex", gap: 8 }}>
+                        <button onClick={createProject} disabled={!newProjectName.trim()} style={{ ...btnPrimary, padding: "7px 14px", fontSize: 12, opacity: newProjectName.trim() ? 1 : 0.4 }}>Create</button>
+                        <button onClick={() => { setShowNewProjectInput(false); setNewProjectName(""); }} style={{ ...btnGhost, padding: "7px 12px", fontSize: 12 }}>Cancel</button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Project cards */}
+                  {projects.map(project => {
+                    const projectSims = simulations.filter(s => s.project_id === project.id);
+                    const lastRun = projectSims[0]?.created_at ? new Date(projectSims[0].created_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : null;
+                    const isMenuOpen = projectMenuId === project.id;
+                    const isRenaming = renamingProjectId === project.id;
+                    const isDeleting = deletingProjectId === project.id;
+                    return (
+                      <div key={project.id} style={{ borderRadius: 12, border: `1px solid ${C.border}`, background: C.surface, padding: "24px", display: "flex", flexDirection: "column", gap: 0, minHeight: 140, cursor: "pointer", transition: "box-shadow 0.15s", position: "relative" }}
+                        onMouseEnter={e => e.currentTarget.style.boxShadow = "0 2px 12px rgba(0,0,0,0.08)"}
+                        onMouseLeave={e => e.currentTarget.style.boxShadow = "none"}
+                        onClick={() => { if (!isMenuOpen && !isRenaming && !isDeleting) { setSelectedProject(project); setView("project"); } }}>
+
+                        {/* Card header */}
+                        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 12 }}>
+                          <div style={{ width: 32, height: 32, borderRadius: 8, background: C.accent, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                            <span style={{ color: "#fff", fontSize: 14 }}>◈</span>
+                          </div>
+                          <div style={{ position: "relative" }}>
+                            <button onClick={e => { e.stopPropagation(); setProjectMenuId(isMenuOpen ? null : project.id); setRenamingProjectId(null); setDeletingProjectId(null); }}
+                              style={{ width: 28, height: 28, borderRadius: 6, border: `1px solid ${C.border}`, background: "transparent", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 2 }}>
+                              {[0,1,2].map(i => <span key={i} style={{ width: 3, height: 3, borderRadius: "50%", background: C.textMuted, display: "block" }} />)}
+                            </button>
+                            {isMenuOpen && (
+                              <>
+                                <div onClick={e => { e.stopPropagation(); setProjectMenuId(null); }} style={{ position: "fixed", inset: 0, zIndex: 10 }} />
+                                <div style={{ position: "absolute", right: 0, top: 32, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, boxShadow: "0 4px 16px rgba(0,0,0,0.1)", zIndex: 20, minWidth: 160, overflow: "hidden" }}>
+                                  <button onClick={e => { e.stopPropagation(); setRenamingProjectId(project.id); setRenameValue(project.name); setProjectMenuId(null); }}
+                                    style={{ width: "100%", padding: "10px 14px", border: "none", background: "transparent", textAlign: "left", fontSize: 13, color: C.text, cursor: "pointer" }}>
+                                    ✏️ Rename
+                                  </button>
+                                  <button onClick={e => { e.stopPropagation(); setDeletingProjectId(project.id); setProjectMenuId(null); }}
+                                    style={{ width: "100%", padding: "10px 14px", border: "none", borderTop: `1px solid ${C.border}`, background: "transparent", textAlign: "left", fontSize: 13, color: C.red, cursor: "pointer" }}>
+                                    🗑 Delete
+                                  </button>
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Rename input */}
+                        {isRenaming ? (
+                          <div onClick={e => e.stopPropagation()} style={{ display: "flex", flexDirection: "column", gap: 8, flex: 1 }}>
+                            <input autoFocus value={renameValue} onChange={e => setRenameValue(e.target.value)}
+                              onKeyDown={e => { if (e.key === "Enter") renameProject(project.id); if (e.key === "Escape") setRenamingProjectId(null); }}
+                              style={{ ...inputSt, fontSize: 13, padding: "7px 10px" }} />
+                            <div style={{ display: "flex", gap: 6 }}>
+                              <button onClick={() => renameProject(project.id)} style={{ ...btnPrimary, padding: "5px 12px", fontSize: 12 }}>Save</button>
+                              <button onClick={() => setRenamingProjectId(null)} style={{ ...btnGhost, padding: "5px 10px", fontSize: 12 }}>Cancel</button>
+                            </div>
+                          </div>
+                        ) : isDeleting ? (
+                          <div onClick={e => e.stopPropagation()} style={{ display: "flex", flexDirection: "column", gap: 8, flex: 1 }}>
+                            <div style={{ fontSize: 12, color: C.textMed, lineHeight: 1.5 }}>Type <strong>"{project.name}"</strong> to confirm deletion. This will delete all {simulations.filter(s => s.project_id === project.id).length} simulation{simulations.filter(s => s.project_id === project.id).length === 1 ? "" : "s"} inside.</div>
+                            <input autoFocus value={deleteConfirmValue} onChange={e => setDeleteConfirmValue(e.target.value)}
+                              onKeyDown={e => { if (e.key === "Enter" && deleteConfirmValue === project.name) deleteProject(project.id); if (e.key === "Escape") setDeletingProjectId(null); }}
+                              placeholder={project.name}
+                              style={{ ...inputSt, fontSize: 13, padding: "7px 10px" }} />
+                            <div style={{ display: "flex", gap: 6 }}>
+                              <button onClick={() => deleteProject(project.id)} disabled={deleteConfirmValue !== project.name}
+                                style={{ ...btnPrimary, padding: "5px 12px", fontSize: 12, background: C.red, opacity: deleteConfirmValue === project.name ? 1 : 0.4 }}>Delete</button>
+                              <button onClick={() => { setDeletingProjectId(null); setDeleteConfirmValue(""); }} style={{ ...btnGhost, padding: "5px 10px", fontSize: 12 }}>Cancel</button>
+                            </div>
+                          </div>
+                        ) : (
+                          <>
+                            <div style={{ fontSize: 15, fontWeight: 700, color: C.text, marginBottom: 6 }}>{project.name}</div>
+                            <div style={{ fontSize: 12, color: C.textMuted }}>{projectSims.length} simulation{projectSims.length === 1 ? "" : "s"}</div>
+                            {lastRun && <div style={{ fontSize: 11, color: C.textMuted, marginTop: 4 }}>Last run {lastRun}</div>}
+                          </>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* RECENT SIMULATIONS */}
               {simulations.length > 0 && (
                 <div>
-                  <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: C.textMuted, marginBottom: 14 }}>Recent Simulations</div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                    {simulations.map(sim => <SimulationCard key={sim.id} sim={sim} onView={loadSimulationDetail} />)}
+                  <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: C.textMuted, marginBottom: 16 }}>Recent Simulations</div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                    {simulations.slice(0, 5).map(sim => (
+                      <SimulationCard key={sim.id} sim={sim} onView={loadSimulationDetail} projectName={sim.projects?.name} />
+                    ))}
                   </div>
-                </div>
-              )}
- 
-              {simulations.length === 0 && (
-                <div style={{ ...card, textAlign: "center", padding: "48px 32px", background: C.surfaceAlt, border: `1px dashed rgba(0,0,0,0.12)` }}>
-                  <div style={{ fontSize: 32, marginBottom: 12 }}>◎</div>
-                  <div style={{ fontSize: 15, fontWeight: 600, color: C.textMed, marginBottom: 6 }}>No simulations yet</div>
-                  <div style={{ fontSize: 13, color: C.textMuted, marginBottom: 20 }}>Upload a design and simulate how real users experience it.</div>
-                  <button onClick={() => setView("new")} style={btnPrimary}>Run your first simulation</button>
                 </div>
               )}
             </div>
@@ -618,6 +780,51 @@ Return this exact JSON (max 3 actNow, max 3 roadmap, all strings under 25 words)
                   </div>
                 ))}
               </div>
+              <Section label="00 — Project">
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+                  {projects.map(p => (
+                    <button key={p.id} onClick={() => { setSimProjectId(p.id); setShowNewProjectInput(false); setNewProjectName(""); }}
+                      style={{ padding: "8px 16px", borderRadius: 8, border: `1.5px solid ${simProjectId === p.id ? C.indigo : C.border}`, background: simProjectId === p.id ? C.indigoLight : C.surface, color: simProjectId === p.id ? C.indigo : C.textMed, fontSize: 13, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
+                      <span style={{ fontSize: 12 }}>◈</span> {p.name}
+                    </button>
+                  ))}
+                  {!showNewProjectInput && (
+                    <button onClick={() => { setShowNewProjectInput(true); setSimProjectId(null); }}
+                      style={{ padding: "8px 16px", borderRadius: 8, border: `1.5px dashed ${C.borderMed}`, background: "transparent", color: C.textMuted, fontSize: 13, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
+                      + New Project
+                    </button>
+                  )}
+                </div>
+                {showNewProjectInput && (
+                  <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 4 }}>
+                    <input
+                      autoFocus
+                      value={newProjectName}
+                      onChange={e => setNewProjectName(e.target.value)}
+                      onKeyDown={async e => {
+                        if (e.key === "Enter" && newProjectName.trim()) {
+                          const { data } = await supabase.from("projects").insert({ user_id: user.id, name: newProjectName.trim() }).select().single();
+                          if (data) { setProjects(prev => [...prev, data]); setSimProjectId(data.id); setNewProjectName(""); setShowNewProjectInput(false); }
+                        }
+                        if (e.key === "Escape") { setShowNewProjectInput(false); setNewProjectName(""); }
+                      }}
+                      placeholder="Project name..."
+                      style={{ ...inputSt, fontSize: 13, padding: "9px 12px", maxWidth: 260 }}
+                    />
+                    <button
+                      disabled={!newProjectName.trim()}
+                      onClick={async () => {
+                        if (!newProjectName.trim()) return;
+                        const { data } = await supabase.from("projects").insert({ user_id: user.id, name: newProjectName.trim() }).select().single();
+                        if (data) { setProjects(prev => [...prev, data]); setSimProjectId(data.id); setNewProjectName(""); setShowNewProjectInput(false); }
+                      }}
+                      style={{ ...btnPrimary, padding: "9px 16px", fontSize: 13, opacity: newProjectName.trim() ? 1 : 0.4 }}>
+                      Create
+                    </button>
+                    <button onClick={() => { setShowNewProjectInput(false); setNewProjectName(""); }} style={{ ...btnGhost, padding: "9px 14px", fontSize: 13 }}>Cancel</button>
+                  </div>
+                )}
+              </Section>
               <Section label="01 — What are you analysing?">
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8 }}>
                   {[{ id: "figma", icon: "◈", label: "Prototype Link" }, { id: "screenshots", icon: "⊞", label: "Screenshots" }, { id: "recording", icon: "◉", label: "Screen Recording" }].map(opt => (
@@ -728,18 +935,25 @@ Return this exact JSON (max 3 actNow, max 3 roadmap, all strings under 25 words)
           {/* RESULTS */}
           {view === "result" && critique && (
             <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-              <h2 style={{ fontSize: 20, fontWeight: 800, margin: 0, color: C.text, letterSpacing: "-0.02em" }}>Simulation Results</h2>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
+                <h2 style={{ fontSize: 20, fontWeight: 800, margin: 0, color: C.text, letterSpacing: "-0.02em" }}>
+                  {simName || "Simulation Results"}
+                </h2>
+                <button onClick={reset} style={{ ...btnPrimary, whiteSpace: "nowrap" }}>Save & Return Home</button>
+              </div>
               <ResultsSection
                 critique={critique}
                 simulationId={currentSimId}
+                inputType={inputType}
                 productType={productType}
-                personaDesc={personaDesc}
+                personaDesc={selectedPersona === "custom" ? "Custom Persona" : personaDesc}
                 constraintsSummary={constraintsSummary}
+                context={context}
                 pmSummary={currentPMSummary}
                 simConversations={{}}
                 simName={simName}
+                date={new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
               />
-              <button onClick={reset} style={{ ...btnPrimary, width: "100%" }}>Save Simulation</button>
             </div>
           )}
  
@@ -751,11 +965,9 @@ Return this exact JSON (max 3 actNow, max 3 roadmap, all strings under 25 words)
                 <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
                   <div style={{ flex: 1 }}>
                     <h2 style={{ fontSize: 20, fontWeight: 800, margin: "0 0 8px", color: C.text, letterSpacing: "-0.02em" }}>{selectedSim.name}</h2>
-                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12 }}>
-                      <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 999, background: C.surfaceAlt, color: C.textMed, border: `1px solid ${C.borderMed}` }}>{selectedSim.product_type}</span>
-                      <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 999, background: C.surfaceAlt, color: C.textMed, border: `1px solid ${C.borderMed}` }}>{selectedSim.persona?.length > 30 ? "Custom Persona" : selectedSim.persona}</span>
-                      <span style={{ fontSize: 11, color: C.textMuted }}>{new Date(selectedSim.created_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</span>
-                    </div>
+                    <div style={{ marginBottom: 4 }}>
+                    <span style={{ fontSize: 12, color: C.textMuted }}>{new Date(selectedSim.created_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</span>
+                  </div>
                   </div>
  
                   {/* ⋯ menu */}
@@ -796,24 +1008,6 @@ Return this exact JSON (max 3 actNow, max 3 roadmap, all strings under 25 words)
                   </div>
                 </div>
  
-                {/* Simulation details for custom persona */}
-                {(selectedSim.persona?.length > 30 || selectedSim.context) && (
-                  <div style={{ background: C.surfaceAlt, borderRadius: 8, padding: "12px 14px", border: `1px solid ${C.border}`, marginTop: 4 }}>
-                    <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: C.textMuted, marginBottom: 8 }}>Simulation Details</div>
-                    {selectedSim.persona?.length > 30 && (
-                      <div style={{ marginBottom: selectedSim.context ? 8 : 0 }}>
-                        <span style={{ fontSize: 11, fontWeight: 600, color: C.textMuted }}>Persona: </span>
-                        <span style={{ fontSize: 12, color: C.textMed }}>{selectedSim.persona}</span>
-                      </div>
-                    )}
-                    {selectedSim.context && (
-                      <div>
-                        <span style={{ fontSize: 11, fontWeight: 600, color: C.textMuted }}>Context: </span>
-                        <span style={{ fontSize: 12, color: C.textMed }}>{selectedSim.context}</span>
-                      </div>
-                    )}
-                  </div>
-                )}
               </div>
  
               <ResultsSection
@@ -826,18 +1020,53 @@ Return this exact JSON (max 3 actNow, max 3 roadmap, all strings under 25 words)
                   signals: selectedSim.signals
                 }}
                 simulationId={selectedSim.id}
+                inputType={selectedSim.input_type}
                 productType={selectedSim.product_type}
                 personaDesc={selectedSim.persona}
                 constraintsSummary={selectedSim.constraints || "{}"}
+                context={selectedSim.context}
                 pmSummary={selectedSim.pm_summary}
                 simConversations={simConversations}
                 simName={selectedSim.name}
+                date={new Date(selectedSim.created_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
                 externalDrawerOpen={detailDrawerOpen}
                 onExternalDrawerClose={() => setDetailDrawerOpen(false)}
               />
             </div>
           )}
  
+          {/* PROJECT VIEW */}
+          {view === "project" && selectedProject && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 32 }}>
+              <div>
+                <button onClick={reset} style={{ ...btnGhost, padding: "6px 12px", fontSize: 12, marginBottom: 20, display: "inline-flex", alignItems: "center", gap: 4 }}>← Home</button>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
+                  <div>
+                    <h2 style={{ fontSize: 22, fontWeight: 800, margin: "0 0 4px", color: C.text, letterSpacing: "-0.02em" }}>{selectedProject.name}</h2>
+                    <p style={{ fontSize: 14, color: C.textMuted, margin: 0 }}>
+                      {simulations.filter(s => s.project_id === selectedProject.id).length} simulation{simulations.filter(s => s.project_id === selectedProject.id).length === 1 ? "" : "s"}
+                    </p>
+                  </div>
+                  <button onClick={() => { setSimProjectId(selectedProject.id); setView("new"); }} style={{ ...btnPrimary, padding: "12px 20px", whiteSpace: "nowrap" }}>+ Run a Simulation</button>
+                </div>
+              </div>
+              {simulations.filter(s => s.project_id === selectedProject.id).length === 0 ? (
+                <div style={{ ...card, textAlign: "center", padding: "48px 32px", background: C.surfaceAlt, border: `1px dashed rgba(0,0,0,0.12)` }}>
+                  <div style={{ fontSize: 32, marginBottom: 12 }}>◈</div>
+                  <div style={{ fontSize: 15, fontWeight: 600, color: C.textMed, marginBottom: 6 }}>No simulations yet</div>
+                  <div style={{ fontSize: 13, color: C.textMuted, marginBottom: 20 }}>Run your first simulation for this project.</div>
+                  <button onClick={() => { setSimProjectId(selectedProject.id); setView("new"); }} style={btnPrimary}>Run a Simulation</button>
+                </div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                  {simulations.filter(s => s.project_id === selectedProject.id).map(sim => (
+                    <SimulationCard key={sim.id} sim={sim} onView={loadSimulationDetail} />
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+          
           {/* SETTINGS */}
           {view === "settings" && (
             <div style={{ display: "flex", flexDirection: "column", gap: 24, maxWidth: 520 }}>
