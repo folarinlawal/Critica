@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { supabase } from "./supabase";
+import jsPDF from "https://esm.sh/jspdf@2.5.1";
  
 const C = {
   bg: "#F7F6F3", surface: "#FFFFFF", surfaceAlt: "#F0EEE9",
@@ -128,13 +129,43 @@ function SummaryDrawer({ open, onClose, summary, simName }) {
   if (!open) return null;
   const copy = () => { navigator.clipboard.writeText(summary); setCopied(true); setTimeout(() => setCopied(false), 2000); };
   const download = () => {
-    const blob = new Blob([summary], { type: "text/plain" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${simName || "lens-summary"}.txt`;
-    a.click();
-    URL.revokeObjectURL(url);
+    const doc = new jsPDF({ unit: "pt", format: "a4" });
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const margin = 48;
+    const maxWidth = pageWidth - margin * 2;
+    let y = 48;
+
+    const addText = (text, fontSize, color, isBold, extraGap = 0) => {
+      doc.setFontSize(fontSize);
+      doc.setTextColor(...color);
+      doc.setFont("helvetica", isBold ? "bold" : "normal");
+      const lines = doc.splitTextToSize(text, maxWidth);
+      lines.forEach(line => {
+        if (y > doc.internal.pageSize.getHeight() - 48) { doc.addPage(); y = 48; }
+        doc.text(line, margin, y);
+        y += fontSize * 1.4;
+      });
+      y += extraGap;
+    };
+
+    const summaryLines = summary.split("\n");
+    summaryLines.forEach(line => {
+      if (!line.trim()) { y += 8; return; }
+      const isHeading = line === line.toUpperCase() && line.trim().length > 2;
+      if (isHeading) {
+        y += 8;
+        addText(line, 8, [107, 114, 128], true, 4);
+        doc.setDrawColor(230, 230, 230);
+        doc.line(margin, y - 8, pageWidth - margin, y - 8);
+        y += 4;
+      } else if (line.match(/^\d+\./)) {
+        addText(line, 11, [26, 26, 26], true, 2);
+      } else {
+        addText(line, 11, [74, 74, 74], false, 0);
+      }
+    });
+
+    doc.save(`${simName || "lens-summary"}.pdf`);
   };
   const lines = summary.split("\n");
   const sections = [];
