@@ -151,7 +151,7 @@ export default function App() {
  
   const [view, setView] = useState("home");
   const [step, setStep] = useState("input");
-  const [inputType, setInputType] = useState("figma");
+  const [inputType, setInputType] = useState("screenshots");
   const [figmaUrl, setFigmaUrl] = useState("");
   const [files, setFiles] = useState([]);
   const [selectedPersona, setSelectedPersona] = useState(null);
@@ -355,6 +355,76 @@ export default function App() {
     reader.onerror = reject;
     reader.readAsDataURL(file);
   });
+
+  const extractFramesFromVideo = (file) => new Promise((resolve) => {
+    const video = document.createElement("video");
+    const url = URL.createObjectURL(file);
+    video.src = url;
+    video.muted = true;
+    video.playsInline = true;
+
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d");
+    const MAX_FRAMES = 24;
+    const SAMPLE_INTERVAL = 0.5;
+    const CHANGE_THRESHOLD = 0.04;
+    const COMPARE_SIZE = 32;
+
+    const getPixelData = () => {
+      const tmp = document.createElement("canvas");
+      tmp.width = COMPARE_SIZE;
+      tmp.height = COMPARE_SIZE;
+      tmp.getContext("2d").drawImage(video, 0, 0, COMPARE_SIZE, COMPARE_SIZE);
+      return tmp.getContext("2d").getImageData(0, 0, COMPARE_SIZE, COMPARE_SIZE).data;
+    };
+
+    const frameDiff = (a, b) => {
+      let diff = 0;
+      for (let i = 0; i < a.length; i += 4) {
+        diff += Math.abs(a[i] - b[i]) + Math.abs(a[i+1] - b[i+1]) + Math.abs(a[i+2] - b[i+2]);
+      }
+      return diff / (a.length / 4 * 255 * 3);
+    };
+
+    video.addEventListener("loadedmetadata", () => {
+      const MAX_DIM = 1000;
+      const scale = Math.min(1, MAX_DIM / Math.max(video.videoWidth, video.videoHeight));
+      canvas.width = Math.round(video.videoWidth * scale);
+      canvas.height = Math.round(video.videoHeight * scale);
+      const duration = video.duration;
+      const times = [];
+      for (let t = 0; t < duration; t += SAMPLE_INTERVAL) times.push(t);
+
+      const capturedFrames = [];
+      let lastPixelData = null;
+      let timeIndex = 0;
+
+      const seekNext = () => {
+        if (timeIndex >= times.length || capturedFrames.length >= MAX_FRAMES) {
+          URL.revokeObjectURL(url);
+          resolve(capturedFrames);
+          return;
+        }
+        video.currentTime = times[timeIndex++];
+      };
+
+      video.addEventListener("seeked", () => {
+        const currentPixelData = getPixelData();
+        const isChanged = !lastPixelData || frameDiff(lastPixelData, currentPixelData) > CHANGE_THRESHOLD;
+        if (isChanged) {
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+          capturedFrames.push(canvas.toDataURL("image/jpeg", 0.8).split(",")[1]);
+          lastPixelData = currentPixelData;
+        }
+        seekNext();
+      });
+
+      seekNext();
+    });
+
+    video.addEventListener("error", () => { URL.revokeObjectURL(url); resolve([]); });
+    video.load();
+  });
  
   const buildConstraintsSummary = () => {
     const ts = TEAM_SIZES.find(t => t.id === teamSize);
@@ -413,18 +483,23 @@ export default function App() {
  
 Product: ${productType} | Input: ${inputDesc} | Persona: ${personaDesc} | Context: ${context || "none"}
 Constraints: ${constraintsSummary}
-${inputType === "figma" ? "No visuals — use common UX patterns for this product type and persona." : "Analyse the visuals carefully."}
+${inputType === "recording" ? "The images are sequential frames extracted from a screen recording of a user flow. Analyse them as a connected journey — pay attention to navigation patterns, screen transitions, task completion paths, and how the experience unfolds across steps." : "Analyse the visuals carefully — examine layout, hierarchy, affordances, and clarity."}
  
 Return this exact JSON (max 3 actNow, max 3 roadmap, all strings under 25 words):
 {"narrativeWalkthrough":"2-3 sentences in first person as the persona","signals":{"clarity":{"rating":"Good|Needs Attention|Critical","explanation":"one sentence on clarity"},"friction":{"rating":"Good|Needs Attention|Critical","explanation":"one sentence — Good means smooth, Critical means high friction"},"confidence":{"rating":"Good|Needs Attention|Critical","explanation":"one sentence on user confidence"},"recovery":{"rating":"Good|Needs Attention|Critical","explanation":"one sentence on error recovery"}},"priorityFocus":"one sentence on the single most impactful change","actNow":[{"severity":"critical|high|medium|low","title":"short title","description":"one sentence","recommendation":"one sentence","effort":"low|medium|high"}],"roadmap":[{"severity":"critical|high|medium|low","title":"short title","description":"one sentence","recommendation":"one sentence","userImpact":"one sentence","pmNote":"one sentence"}],"strengths":["one sentence"]}`;
  
       const content = [];
       if (inputType === "screenshots" && files.length > 0) {
-        for (const file of files.slice(0, 4)) {
+        for (const file of files.slice(0, 8)) {
           if (file.type.startsWith("image/")) {
             const b64 = await fileToBase64(file);
             content.push({ type: "image", source: { type: "base64", media_type: file.type, data: b64 } });
           }
+        }
+      } else if (inputType === "recording" && files.length > 0) {
+        const frames = await extractFramesFromVideo(files[0]);
+        for (const frame of frames) {
+          content.push({ type: "image", source: { type: "base64", media_type: "image/jpeg", data: frame } });
         }
       }
       content.push({ type: "text", text: userMessage });
@@ -826,8 +901,8 @@ Return this exact JSON (max 3 actNow, max 3 roadmap, all strings under 25 words)
                 )}
               </Section>
               <Section label="01 — What are you analysing?">
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8 }}>
-                  {[{ id: "figma", icon: "◈", label: "Prototype Link" }, { id: "screenshots", icon: "⊞", label: "Screenshots" }, { id: "recording", icon: "◉", label: "Screen Recording" }].map(opt => (
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 8 }}>
+                  {[{ id: "screenshots", icon: "⊞", label: "Screenshots" }, { id: "recording", icon: "◉", label: "Screen Recording" }].map(opt => (
                     <button key={opt.id} onClick={() => { setInputType(opt.id); setFiles([]); }}
                       style={{ padding: "14px 10px", borderRadius: 8, border: `1.5px solid ${inputType === opt.id ? C.indigo : C.border}`, background: inputType === opt.id ? C.indigoLight : C.surface, color: inputType === opt.id ? C.indigo : C.textMuted, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 6, fontSize: 20 }}>
                       <span>{opt.icon}</span>
@@ -835,7 +910,6 @@ Return this exact JSON (max 3 actNow, max 3 roadmap, all strings under 25 words)
                     </button>
                   ))}
                 </div>
-                {inputType === "figma" && <input value={figmaUrl} onChange={e => setFigmaUrl(e.target.value)} placeholder="Paste your prototype link here..." style={inputSt} />}
                 {(inputType === "screenshots" || inputType === "recording") && (
                   <div onDragOver={e => { e.preventDefault(); setDragOver(true); }} onDragLeave={() => setDragOver(false)}
                     onDrop={e => { e.preventDefault(); setDragOver(false); handleFiles(e.dataTransfer.files); }}
